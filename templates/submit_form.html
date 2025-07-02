@@ -5,12 +5,10 @@
 {% block content %}
 <article>
     <header>
-        <!-- ログインしているメンバーの名前を表示 -->
         <h2>{{ selected_member_name }} さんの希望シフト</h2>
         <p>全期間の希望をまとめて提出・更新できます。</p>
     </header>
 
-    <!-- 提出完了メッセージなどを表示 -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
           {% for category, message in messages %}
@@ -19,10 +17,8 @@
       {% endif %}
     {% endwith %}
 
-    <!-- シフトをまとめて提出するフォーム -->
+    <!-- ★★★ actionの指定方法を修正 ★★★ -->
     <form method="POST" action="{{ url_for('submit_availability', member_id=selected_member_id) }}">
-        <!-- フォームが誰のものか、隠しデータとして送信 -->
-        <input type="hidden" name="member_id" value="{{ selected_member_id }}">
         
         <table>
             <thead>
@@ -33,7 +29,6 @@
                 </tr>
             </thead>
             <tbody>
-                <!-- Pythonから渡された日付リストをループ処理 -->
                 {% for day in days %}
                 <tr>
                     <td>{{ day.date.strftime('%Y-%m-%d') }}</td>

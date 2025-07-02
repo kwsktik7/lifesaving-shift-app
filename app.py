@@ -8,16 +8,10 @@ from algorithm import generate_all_shifts, START_DATE, END_DATE
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
-# flashメッセージ機能（例：「登録しました！」）を使うための秘密鍵です
 app.secret_key = 'your-super-secret-key-please-change' # 実際にはもっと複雑な文字列に変更してください
 
 # --- データベース接続の管理 ---
-
 def get_db():
-    """
-    リクエストごとにデータベース接続を管理します。
-    接続がなければ新規に作成し、あれば既存の接続を返します。
-    """
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_NAME)
@@ -25,9 +19,6 @@ def get_db():
 
 @app.teardown_appcontext
 def close_connection(exception):
-    """
-    各リクエストの最後に、データベース接続を自動的に閉じます。
-    """
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
@@ -50,7 +41,6 @@ def login():
     if not member_id:
         flash("名前を選択してください。", "error")
         return redirect(url_for('login_page'))
-    # 選択されたメンバーIDを持って、希望提出ページへ移動
     return redirect(url_for('submit_availability', member_id=member_id))
 
 @app.route('/register', methods=['POST'])
@@ -66,66 +56,63 @@ def register():
     db = get_db()
     cursor = db.cursor()
     
-    # 同じ名前のメンバーがいないか確認
     cursor.execute("SELECT id FROM members WHERE name = ? AND is_active = 1", (name,))
     if cursor.fetchone():
         flash(f"エラー: 「{name}」は既に登録されています。一覧から選択してください。", "error")
         return redirect(url_for('login_page'))
     
-    # 【バグ修正】is_active=1 を明示的に追加して、必ず有効なメンバーとして登録する
     cursor.execute("INSERT INTO members (name, grade, is_active) VALUES (?, ?, ?)", (name, grade, 1))
     new_member_id = cursor.lastrowid
     db.commit()
     
     flash(f"ようこそ、{name}さん！メンバーとして登録しました。", "success")
-    # 新しく登録したメンバーIDで希望提出ページへ移動
     return redirect(url_for('submit_availability', member_id=new_member_id))
 
+# ★★★ ここからが大きく変更・修正される部分 ★★★
 
-@app.route('/submit', methods=['GET', 'POST'])
-def submit_availability():
-    """希望シフトの一括提出ページ"""
-    member_id = request.args.get('member_id', type=int)
-    if not member_id:
-        # URLにメンバーIDがなければ、ログインページに戻す
-        return redirect(url_for('login_page'))
-
+@app.route('/submit/<int:member_id>', methods=['GET', 'POST'])
+def submit_availability(member_id):
+    """希望シフトの一括提出ページ（URLにメンバーIDを含む形に変更）"""
     db = get_db()
     cursor = db.cursor()
 
-    # POSTリクエスト（フォームが送信された時）の処理
-    if request.method == 'POST':
-        form_member_id = request.form.get('member_id', type=int)
-        if form_member_id != member_id:
-             flash("不正な操作です。", "error")
-             return redirect(url_for('login_page'))
-
-        availability_data_to_save = []
-        current_date = START_DATE
-        while current_date <= END_DATE:
-            date_str = current_date.strftime('%Y-%m-%d')
-            availability_type = request.form.get(f"availability_{date_str}")
-            
-            if availability_type:
-                availability_data_to_save.append((member_id, date_str, availability_type))
-            
-            current_date += timedelta(days=1)
-        
-        cursor.executemany("INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)", availability_data_to_save)
-        db.commit()
-        
-        flash("全ての希望シフトを更新しました！", "success")
-        return redirect(url_for('submit_availability', member_id=member_id))
-
-    # GETリクエスト（ページ表示時）の処理
-    cursor.execute("SELECT name, grade FROM members WHERE id = ?", (member_id,))
+    # まず、URLで指定されたメンバーが本当に存在するか確認
+    cursor.execute("SELECT name, grade FROM members WHERE id = ? AND is_active = 1", (member_id,))
     member_info = cursor.fetchone()
     if not member_info:
-        flash("指定されたメンバーが見つかりません。", "error")
+        flash("指定されたメンバーが見つかりません。ログインからやり直してください。", "error")
         return redirect(url_for('login_page'))
     
     selected_member_name = member_info[0]
 
+    # --- フォームが送信された時（POST）のデータ保存処理 ---
+    if request.method == 'POST':
+        availability_data_to_save = []
+        current_date = START_DATE
+        while current_date <= END_DATE:
+            date_str = current_date.strftime('%Y-%m-%d')
+            # 各日付の希望データをフォームから取得
+            availability_type = request.form.get(f"availability_{date_str}")
+            if availability_type:
+                availability_data_to_save.append((member_id, date_str, availability_type))
+            current_date += timedelta(days=1)
+
+        try:
+            # executemanyで、全日程のデータを一度にデータベースに登録（または上書き）
+            cursor.executemany(
+                "INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)",
+                availability_data_to_save
+            )
+            db.commit()
+            flash("全ての希望シフトを更新しました！", "success")
+        except Exception as e:
+            db.rollback() # エラーが起きたら変更を元に戻す
+            flash(f"データベースの更新中にエラーが発生しました: {e}", "error")
+
+        # 処理が終わったら、同じページを再表示
+        return redirect(url_for('submit_availability', member_id=member_id))
+
+    # --- ページを最初に表示する時（GET）のデータ読み込み処理 ---
     days = []
     weekdays_jp = ["月", "火", "水", "木", "金", "土", "日"]
     current_date = START_DATE
@@ -133,6 +120,7 @@ def submit_availability():
         days.append({'date': current_date, 'weekday': weekdays_jp[current_date.weekday()]})
         current_date += timedelta(days=1)
     
+    # データベースから、このメンバーの既存の希望シフトを読み込む
     availability = {}
     cursor.execute("SELECT shift_date, availability_type FROM availability WHERE member_id = ?", (member_id,))
     for row in cursor.fetchall():
@@ -144,40 +132,32 @@ def submit_availability():
                            days=days, 
                            availability=availability)
 
-# --- 管理者向けページ ---
+# --- 管理者向けページ（変更なし） ---
 
 @app.route('/admin')
 def admin_dashboard():
-    """管理者用のダッシュボードページ"""
     return render_template('admin_dashboard.html')
 
 @app.route('/run-algorithm')
 def run_algorithm_route():
-    """シフト生成アルゴリズムを実行"""
     try:
-        print("シフト生成リクエストを受け取りました。")
         generate_all_shifts()
-        print("シフト生成が完了しました。")
         flash("シフトの自動生成が完了しました！", "success")
     except Exception as e:
-        print(f"シフト生成中にエラーが発生しました: {e}")
         flash(f"シフト生成中にエラーが発生しました: {e}", "error")
     return redirect(url_for('schedule'))
 
 @app.route('/schedule')
 def schedule():
-    """確定シフト表ページ"""
     db = get_db()
     try:
         query = "SELECT s.shift_date AS '日付', m.name AS 'メンバー名', s.payment_type AS '給与タイプ' FROM shifts s JOIN members m ON s.member_id = m.id ORDER BY s.shift_date, m.name;"
         df = pd.read_sql_query(query, db)
-        
         if not df.empty:
             df['給与タイプ'] = df['給与タイプ'].replace({'type_1': '1', 'type_V': 'V'})
             table_html = df.to_html(classes='striped', index=False, border=0)
         else:
-            table_html = "<p>まだシフトが生成されていません。「シフトを自動生成する」ボタンを押してください。</p>"
-        
+            table_html = "<p>まだシフトが生成されていません。</p>"
         return render_template('schedule.html', table_html=table_html)
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
@@ -185,23 +165,17 @@ def schedule():
 
 @app.route('/check-availability')
 def check_availability():
-    """提出された希望シフトの一覧ページ"""
     db = get_db()
     try:
         query = "SELECT a.shift_date AS '日付', m.name AS 'メンバー名', a.availability_type AS '希望' FROM availability a JOIN members m ON a.member_id = m.id ORDER BY a.shift_date DESC, m.name;"
         df = pd.read_sql_query(query, db)
-        
         if not df.empty:
             df['希望'] = df['希望'].replace({'full_day': '1日入れる', 'am_only': '午前のみ', 'pm_only': '午後のみ', 'unavailable': '入れない'})
             table_html = df.to_html(classes='striped', index=False, border=0)
         else:
             table_html = "<p>まだ希望シフトが提出されていません。</p>"
-        
         return render_template('check_availability.html', table_html=table_html)
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
         return render_template('check_availability.html', table_html="<p>希望シフトの表示中にエラーが発生しました。</p>")
 
-# このファイルが `python app.py` で直接実行された場合のみ、テスト用のサーバーを起動
-if __name__ == '__main__':
-    app.run(debug=True)
