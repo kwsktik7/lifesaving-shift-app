@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}メンバー管理{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h2>メンバー管理</h2>
+        <p>現在登録されているメンバーの一覧です。不要なメンバーを削除できます。</p>
+    </header>
+
+    <!-- flashメッセージ（成功・エラー通知）の表示エリア -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <p class="{{ category }}">{{ message }}</p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- メンバー一覧テーブル -->
+    <figure>
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th>名前</th>
+                    <th>学年</th>
+                    <th style="text-align: right;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in members %}
+                <tr>
+                    <td>{{ member.name }}</td>
+                    <td>{{ member.grade }}年</td>
+                    <td style="text-align: right;">
+                        <!-- 削除ボタンは誤操作を防ぐためフォームにする -->
+                        <form method="POST" action="{{ url_for('delete_member', member_id=member.id) }}" style="margin-bottom: 0;">
+                            <button type="submit" class="secondary outline" onclick="return confirm('本当に「{{ member.name }}」さんを削除しますか？\nこの操作は元に戻せませんが、データは残ります。');">
+                                削除
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3">現在、有効なメンバーはいません。</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </figure>
+</article>
+{% endblock %}

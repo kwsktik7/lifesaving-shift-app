@@ -2,13 +2,12 @@ from flask import Flask, g, redirect, url_for, render_template, request, flash
 import sqlite3
 import pandas as pd
 from datetime import date, timedelta
-# algorithm.pyから必要な関数と変数をインポート
 from algorithm import generate_all_shifts, START_DATE, END_DATE
 
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
-app.secret_key = 'your-super-secret-key-please-change' 
+app.secret_key = 'your-super-secret-key-please-change'
 
 # --- データベース接続の管理 ---
 def get_db():
@@ -90,10 +89,7 @@ def submit_availability(member_id):
             current_date += timedelta(days=1)
 
         try:
-            cursor.executemany(
-                "INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)",
-                availability_data_to_save
-            )
+            cursor.executemany("INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)", availability_data_to_save)
             db.commit()
             flash("全ての希望シフトを更新しました！", "success")
         except Exception as e:
@@ -126,6 +122,27 @@ def submit_availability(member_id):
 def admin_dashboard():
     return render_template('admin_dashboard.html')
 
+# ★★★ 新しいメンバー管理ページを追加 ★★★
+@app.route('/manage-members')
+def manage_members():
+    """メンバーの一覧表示と削除を行う管理者ページ"""
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id, name, grade FROM members WHERE is_active = 1 ORDER BY grade DESC, name ASC")
+    members_list = [{'id': row[0], 'name': row[1], 'grade': row[2]} for row in cursor.fetchall()]
+    return render_template('manage_members.html', members=members_list)
+
+# ★★★ 新しいメンバー削除処理を追加 ★★★
+@app.route('/delete-member/<int:member_id>', methods=['POST'])
+def delete_member(member_id):
+    """メンバーを削除（論理削除）する"""
+    db = get_db()
+    db.execute("UPDATE members SET is_active = 0 WHERE id = ?", (member_id,))
+    db.commit()
+    flash("メンバーを削除しました。", "success")
+    return redirect(url_for('manage_members'))
+
+
 @app.route('/run-algorithm')
 def run_algorithm_route():
     try:
@@ -135,32 +152,16 @@ def run_algorithm_route():
         flash(f"シフト生成中にエラーが発生しました: {e}", "error")
     return redirect(url_for('schedule'))
 
-# ★★★ この関数を修正 ★★★
 @app.route('/schedule')
 def schedule():
-    """確定シフト表ページ"""
     db = get_db()
     try:
-        # 学年(grade)を追加し、日付(昇順)→学年(降順)→名前(昇順)で並び替え
-        query = """
-        SELECT
-            s.shift_date AS "日付",
-            m.grade AS "学年",
-            m.name AS "メンバー名",
-            s.payment_type AS "給与タイプ"
-        FROM
-            shifts s
-        JOIN
-            members m ON s.member_id = m.id
-        ORDER BY
-            s.shift_date ASC, m.grade DESC, m.name ASC;
-        """
+        query = "SELECT s.shift_date AS '日付', m.grade AS '学年', m.name AS 'メンバー名', s.payment_type AS '給与タイプ' FROM shifts s JOIN members m ON s.member_id = m.id ORDER BY s.shift_date ASC, m.grade DESC, m.name ASC;"
         df = pd.read_sql_query(query, db)
         
         shifts_list = []
         if not df.empty:
             df['給与タイプ'] = df['給与タイプ'].replace({'type_1': '1', 'type_V': 'V'})
-            # DataFrameを辞書のリストに変換してテンプレートに渡す
             shifts_list = df.to_dict(orient='records')
         
         return render_template('schedule.html', shifts=shifts_list)
@@ -170,21 +171,9 @@ def schedule():
 
 @app.route('/check-availability')
 def check_availability():
-    """提出された希望シフトの一覧を表示するページ"""
     db = get_db()
     try:
-        query = """
-        SELECT
-            a.shift_date AS "日付",
-            m.name AS "メンバー名",
-            a.availability_type AS "希望"
-        FROM
-            availability a
-        JOIN
-            members m ON a.member_id = m.id
-        ORDER BY
-            a.shift_date ASC, m.name;
-        """
+        query = "SELECT a.shift_date AS '日付', m.name AS 'メンバー名', a.availability_type AS '希望' FROM availability a JOIN members m ON a.member_id = m.id ORDER BY a.shift_date ASC, m.name;"
         df = pd.read_sql_query(query, db)
         
         if not df.empty:
