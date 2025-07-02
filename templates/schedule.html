@@ -4,16 +4,53 @@
 
 {% block content %}
 <article>
-    <header><h2>確定シフト表</h2></header>
+    <header>
+        <h2>確定シフト表</h2>
+    </header>
     
+    <!-- flashメッセージ（成功・エラー通知）の表示エリア -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
-                <p class="message {{ category }}">{{ message }}</p>
+                <p class="{{ category }}">{{ message }}</p>
             {% endfor %}
         {% endif %}
     {% endwith %}
     
-    {{ table_html|safe }}
+    <!-- シフトデータがある場合のみ、ループ処理を開始 -->
+    {% if shifts %}
+        <!-- Jinja2のgroupbyフィルターを使って、"日付"をキーにデータをグループ化 -->
+        {% for group in shifts | groupby('日付') %}
+            <!-- 日付を見出しとして表示 -->
+            <h4 style="margin-top: 2.5rem; border-bottom: 2px solid var(--pico-muted-border-color); padding-bottom: 0.5rem;">
+                {{ group.grouper }}
+            </h4>
+            <!-- 日付ごとのテーブルを作成 -->
+            <figure>
+                <table role="grid">
+                    <thead>
+                        <tr>
+                            <th scope="col" style="width: 15%;">学年</th>
+                            <th scope="col">メンバー名</th>
+                            <th scope="col" style="width: 20%;">給与タイプ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- グループ内のメンバーを一行ずつ表示 -->
+                        {% for shift in group.list %}
+                        <tr>
+                            <td>{{ shift.学年 }}年</td>
+                            <td>{{ shift.メンバー名 }}</td>
+                            <td>{{ shift['給与タイプ'] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </figure>
+        {% endfor %}
+    {% else %}
+        <!-- シフトデータがない場合のメッセージ -->
+        <p>まだシフトが生成されていません。管理者ページから「シフトを自動生成する」ボタンを押してください。</p>
+    {% endif %}
 </article>
 {% endblock %}

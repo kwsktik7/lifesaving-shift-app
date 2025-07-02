@@ -6,24 +6,35 @@
 <article>
     <header>
         <h2>管理者ダッシュボード</h2>
+        <p>ここからシフトの生成や提出状況の確認ができます。</p>
     </header>
-
-    <div class="grid">
-        <!-- シフト生成ボタン -->
-        <a href="/run-algorithm" role="button" class="contrast">
-            <hgroup>
-                <h4>シフトを自動生成する</h4>
-                <p>現在の希望シフトを元に、新しいシフト表を作成します。<br>（注意：既存のシフト表は上書きされます）</p>
-            </hgroup>
-        </a>
-        <!-- 希望シフト確認ページへのリンク -->
-        <a href="/check-availability" role="button">
-            <hgroup>
-                <h4>希望シフトの提出状況</h4>
-                <p>全メンバーから提出された希望シフトの一覧を確認します。</p>
-            </hgroup>
-        </a>
-    </div>
-    
 </article>
+
+<div class="grid">
+    <!-- カード1: シフト生成 -->
+    <article>
+        <hgroup>
+            <h4>⚙️ シフトを自動生成する</h4>
+            <p>最新の希望シフトを元に、公平なシフト表を再計算します。</p>
+        </hgroup>
+        <footer>
+            <a href="/run-algorithm" role="button" class="contrast" onclick="return confirm('新しいシフトを生成します。現在のシフト表は上書きされますが、よろしいですか？');">
+                生成を実行
+            </a>
+        </footer>
+    </article>
+
+    <!-- カード2: 提出状況の確認 -->
+    <article>
+         <hgroup>
+            <h4>📋 希望シフトの提出状況</h4>
+            <p>全メンバーから提出された希望シフトの一覧を確認します。</p>
+        </hgroup>
+        <footer>
+            <a href="/check-availability" role="button" class="secondary">
+                一覧を確認
+            </a>
+        </footer>
+    </article>
+</div>
 {% endblock %}

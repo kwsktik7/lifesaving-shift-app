@@ -8,7 +8,7 @@ from algorithm import generate_all_shifts, START_DATE, END_DATE
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
-app.secret_key = 'your-super-secret-key-please-change' # 実際にはもっと複雑な文字列に変更してください
+app.secret_key = 'your-super-secret-key-please-change' 
 
 # --- データベース接続の管理 ---
 def get_db():
@@ -27,7 +27,6 @@ def close_connection(exception):
 
 @app.route('/')
 def login_page():
-    """アプリの入り口となる、ログイン/新規登録ページを表示します。"""
     cursor = get_db().cursor()
     cursor.execute("SELECT id, name, grade FROM members WHERE is_active = 1 ORDER BY grade, name")
     members = cursor.fetchall()
@@ -36,7 +35,6 @@ def login_page():
 
 @app.route('/login', methods=['POST'])
 def login():
-    """既存メンバーのログイン処理"""
     member_id = request.form.get('member_id')
     if not member_id:
         flash("名前を選択してください。", "error")
@@ -45,7 +43,6 @@ def login():
 
 @app.route('/register', methods=['POST'])
 def register():
-    """新規メンバーの登録処理"""
     name = request.form.get('name', '').strip()
     grade = request.form.get('grade')
     
@@ -71,7 +68,6 @@ def register():
 
 @app.route('/submit/<int:member_id>', methods=['GET', 'POST'])
 def submit_availability(member_id):
-    """希望シフトの一括提出ページ"""
     db = get_db()
     cursor = db.cursor()
 
@@ -104,11 +100,8 @@ def submit_availability(member_id):
             db.rollback()
             flash(f"データベースの更新中にエラーが発生しました: {e}", "error")
 
-        # ★★★ ここを修正 ★★★
-        # 処理が終わったら、ログインページ（ホーム）にリダイレクトする
         return redirect(url_for('login_page'))
 
-    # GETリクエスト時の処理
     days = []
     weekdays_jp = ["月", "火", "水", "木", "金", "土", "日"]
     current_date = START_DATE
@@ -127,7 +120,7 @@ def submit_availability(member_id):
                            days=days, 
                            availability=availability)
 
-# --- 管理者向けページ（変更なし） ---
+# --- 管理者向けページ ---
 
 @app.route('/admin')
 def admin_dashboard():
@@ -142,38 +135,68 @@ def run_algorithm_route():
         flash(f"シフト生成中にエラーが発生しました: {e}", "error")
     return redirect(url_for('schedule'))
 
+# ★★★ この関数を修正 ★★★
 @app.route('/schedule')
 def schedule():
+    """確定シフト表ページ"""
     db = get_db()
     try:
-        query = "SELECT s.shift_date AS '日付', m.name AS 'メンバー名', s.payment_type AS '給与タイプ' FROM shifts s JOIN members m ON s.member_id = m.id ORDER BY s.shift_date, m.name;"
+        # 学年(grade)を追加し、日付(昇順)→学年(降順)→名前(昇順)で並び替え
+        query = """
+        SELECT
+            s.shift_date AS "日付",
+            m.grade AS "学年",
+            m.name AS "メンバー名",
+            s.payment_type AS "給与タイプ"
+        FROM
+            shifts s
+        JOIN
+            members m ON s.member_id = m.id
+        ORDER BY
+            s.shift_date ASC, m.grade DESC, m.name ASC;
+        """
         df = pd.read_sql_query(query, db)
+        
+        shifts_list = []
         if not df.empty:
             df['給与タイプ'] = df['給与タイプ'].replace({'type_1': '1', 'type_V': 'V'})
-            table_html = df.to_html(classes='striped', index=False, border=0)
-        else:
-            table_html = "<p>まだシフトが生成されていません。</p>"
-        return render_template('schedule.html', table_html=table_html)
+            # DataFrameを辞書のリストに変換してテンプレートに渡す
+            shifts_list = df.to_dict(orient='records')
+        
+        return render_template('schedule.html', shifts=shifts_list)
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
-        return render_template('schedule.html', table_html="<p>シフト表の表示中にエラーが発生しました。</p>")
+        return render_template('schedule.html', shifts=[])
 
 @app.route('/check-availability')
 def check_availability():
+    """提出された希望シフトの一覧を表示するページ"""
     db = get_db()
     try:
-        query = "SELECT a.shift_date AS '日付', m.name AS 'メンバー名', a.availability_type AS '希望' FROM availability a JOIN members m ON a.member_id = m.id ORDER BY a.shift_date DESC, m.name;"
+        query = """
+        SELECT
+            a.shift_date AS "日付",
+            m.name AS "メンバー名",
+            a.availability_type AS "希望"
+        FROM
+            availability a
+        JOIN
+            members m ON a.member_id = m.id
+        ORDER BY
+            a.shift_date ASC, m.name;
+        """
         df = pd.read_sql_query(query, db)
+        
         if not df.empty:
             df['希望'] = df['希望'].replace({'full_day': '1日入れる', 'am_only': '午前のみ', 'pm_only': '午後のみ', 'unavailable': '入れない'})
             table_html = df.to_html(classes='striped', index=False, border=0)
         else:
             table_html = "<p>まだ希望シフトが提出されていません。</p>"
+        
         return render_template('check_availability.html', table_html=table_html)
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
         return render_template('check_availability.html', table_html="<p>希望シフトの表示中にエラーが発生しました。</p>")
 
-# このファイルが `python app.py` で直接実行された場合のみ、テスト用のサーバーを起動
 if __name__ == '__main__':
     app.run(debug=True)
