@@ -9,7 +9,6 @@
         <p>現在登録されているメンバーの一覧です。不要なメンバーを削除できます。</p>
     </header>
 
-    <!-- flashメッセージ（成功・エラー通知）の表示エリア -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -18,7 +17,6 @@
       {% endif %}
     {% endwith %}
 
-    <!-- メンバー一覧テーブル -->
     <figure>
         <table role="grid">
             <thead>
@@ -34,9 +32,10 @@
                     <td>{{ member.name }}</td>
                     <td>{{ member.grade }}年</td>
                     <td style="text-align: right;">
-                        <!-- 削除ボタンは誤操作を防ぐためフォームにする -->
+                        <!-- ★★★ このonclickのメッセージを修正 ★★★ -->
                         <form method="POST" action="{{ url_for('delete_member', member_id=member.id) }}" style="margin-bottom: 0;">
-                            <button type="submit" class="secondary outline" onclick="return confirm('本当に「{{ member.name }}」さんを削除しますか？\nこの操作は元に戻せませんが、データは残ります。');">
+                            <button type="submit" class="secondary outline" 
+                                    onclick="return confirm('本当に「{{ member.name }}」さんを削除しますか？\nこのメンバーに関連する全ての希望シフトと確定シフトも完全に削除され、元に戻すことはできません。');">
                                 削除
                             </button>
                         </form>

@@ -2,12 +2,13 @@ from flask import Flask, g, redirect, url_for, render_template, request, flash
 import sqlite3
 import pandas as pd
 from datetime import date, timedelta
+# algorithm.pyから必要な関数と変数をインポート
 from algorithm import generate_all_shifts, START_DATE, END_DATE
 
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
-app.secret_key = 'your-super-secret-key-please-change'
+app.secret_key = 'your-super-secret-key-please-change' 
 
 # --- データベース接続の管理 ---
 def get_db():
@@ -122,24 +123,31 @@ def submit_availability(member_id):
 def admin_dashboard():
     return render_template('admin_dashboard.html')
 
-# ★★★ 新しいメンバー管理ページを追加 ★★★
 @app.route('/manage-members')
 def manage_members():
-    """メンバーの一覧表示と削除を行う管理者ページ"""
     db = get_db()
     cursor = db.cursor()
     cursor.execute("SELECT id, name, grade FROM members WHERE is_active = 1 ORDER BY grade DESC, name ASC")
     members_list = [{'id': row[0], 'name': row[1], 'grade': row[2]} for row in cursor.fetchall()]
     return render_template('manage_members.html', members=members_list)
 
-# ★★★ 新しいメンバー削除処理を追加 ★★★
+# ★★★ この関数を修正 ★★★
 @app.route('/delete-member/<int:member_id>', methods=['POST'])
 def delete_member(member_id):
-    """メンバーを削除（論理削除）する"""
+    """メンバーをデータベースから完全に削除する"""
     db = get_db()
-    db.execute("UPDATE members SET is_active = 0 WHERE id = ?", (member_id,))
-    db.commit()
-    flash("メンバーを削除しました。", "success")
+    cursor = db.cursor()
+    try:
+        # 関連するテーブルから順番に削除する
+        cursor.execute("DELETE FROM shifts WHERE member_id = ?", (member_id,))
+        cursor.execute("DELETE FROM availability WHERE member_id = ?", (member_id,))
+        cursor.execute("DELETE FROM members WHERE id = ?", (member_id,))
+        db.commit()
+        flash("メンバーを完全に削除しました。", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"メンバーの削除中にエラーが発生しました: {e}", "error")
+        
     return redirect(url_for('manage_members'))
 
 
@@ -168,24 +176,6 @@ def schedule():
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
         return render_template('schedule.html', shifts=[])
-
-@app.route('/check-availability')
-def check_availability():
-    db = get_db()
-    try:
-        query = "SELECT a.shift_date AS '日付', m.name AS 'メンバー名', a.availability_type AS '希望' FROM availability a JOIN members m ON a.member_id = m.id ORDER BY a.shift_date ASC, m.name;"
-        df = pd.read_sql_query(query, db)
-        
-        if not df.empty:
-            df['希望'] = df['希望'].replace({'full_day': '1日入れる', 'am_only': '午前のみ', 'pm_only': '午後のみ', 'unavailable': '入れない'})
-            table_html = df.to_html(classes='striped', index=False, border=0)
-        else:
-            table_html = "<p>まだ希望シフトが提出されていません。</p>"
-        
-        return render_template('check_availability.html', table_html=table_html)
-    except Exception as e:
-        flash(f"エラーが発生しました: {e}", "error")
-        return render_template('check_availability.html', table_html="<p>希望シフトの表示中にエラーが発生しました。</p>")
 
 if __name__ == '__main__':
     app.run(debug=True)
