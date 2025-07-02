@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>希望シフト提出</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .form-group { margin-bottom: 1em; }
+        label { display: block; margin-bottom: 0.5em; }
+        .message { color: green; font-weight: bold; border: 1px solid green; padding: 1em; margin-bottom: 1em; }
+    </style>
+</head>
+<body>
+    <h1>希望シフト提出フォーム</h1>
+
+    {% if message %}
+        <p class="message">{{ message }}</p>
+    {% endif %}
+
+    <form action="/submit" method="post">
+        <div class="form-group">
+            <label for="member">名前:</label>
+            <select name="member_id" id="member" required>
+                <option value="">-- 名前を選択してください --</option>
+                {% for member in members %}
+                <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="date">日付:</label>
+            <input type="date" id="date" name="shift_date" required>
+        </div>
+
+        <div class="form-group">
+            <label>希望:</label>
+            <div>
+                <input type="radio" id="full_day" name="availability_type" value="full_day" checked>
+                <label for="full_day" style="display: inline;">1日入れる</label>
+            </div>
+            <div>
+                <input type="radio" id="am_only" name="availability_type" value="am_only">
+                <label for="am_only" style="display: inline;">午前のみ</label>
+            </div>
+            <div>
+                <input type="radio" id="pm_only" name="availability_type" value="pm_only">
+                <label for="pm_only" style="display: inline;">午後のみ</label>
+            </div>
+            <div>
+                <input type="radio" id="unavailable" name="availability_type" value="unavailable">
+                <label for="unavailable" style="display: inline;">入れない</label>
+            </div>
+        </div>
+
+        <button type="submit">提出する</button>
+    </form>
+    <hr>
+    <p><a href="/">トップに戻る</a></p>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}ホーム{% endblock %}
+
+{% block content %}
+<article>
+    <h1 style="text-align: center;">ライフセービング シフト管理</h1>
+    <p style="text-align: center;">ようこそ！メニューから操作を選んでください。</p>
+    
+    <div class="grid">
+        <a href="/submit" role="button">希望シフトを提出する</a>
+        <a href="/check-availability" role="button">提出状況を見る</a>
+    </div>
+
+    <hr>
+    
+    <details>
+        <summary>管理者用メニュー</summary>
+        <ul>
+            <li><a href="/schedule">完成したシフト表を見る</a></li>
+            <li><a href="/run-algorithm" role="button" class="contrast">シフトを自動生成する</a><br><small>（注意：現在のシフトは上書きされます）</small></li>
+        </ul>
+    </details>
+</article>
+{% endblock %}

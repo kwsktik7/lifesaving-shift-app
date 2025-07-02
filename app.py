@@ -1,12 +1,12 @@
-# ★★★新しいインポートを追加★★★
-from flask import Flask, g, redirect, url_for
+from flask import Flask, g, redirect, url_for, render_template, request, flash
 import sqlite3
 import pandas as pd
-# ★★★algorithm.pyの関数をインポート★★★
 from algorithm import generate_all_shifts
 
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
+# flashメッセージ機能を使うための秘密鍵
+app.secret_key = 'your-super-secret-key' 
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -22,40 +22,70 @@ def close_connection(exception):
 
 @app.route('/')
 def index():
-    # ★★★実行ボタンへのリンクを追加★★★
-    return '''
-    <h1>ライフセービング シフト管理アプリ</h1>
-    <p><a href="/schedule">完成したシフト表を見る</a></p>
-    <hr>
-    <h2>管理者メニュー</h2>
-    <p><a href="/run-algorithm">シフトを自動生成する</a></p>
-    <p style="color:red;">（注意：現在のシフトは上書きされます）</p>
-    '''
+    """トップページ"""
+    return render_template('index.html')
+
+@app.route('/submit', methods=['GET', 'POST'])
+def submit_availability():
+    db = get_db()
+    cursor = db.cursor()
+
+    if request.method == 'POST':
+        member_id = request.form['member_id']
+        shift_date = request.form['shift_date']
+        availability_type = request.form['availability_type']
+        
+        cursor.execute(
+            "INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)",
+            (member_id, shift_date, availability_type)
+        )
+        db.commit()
+        
+        # 提出完了メッセージを設定
+        flash(f"{shift_date} の希望を提出しました！", "success")
+        return redirect(url_for('submit_availability'))
+
+    cursor.execute("SELECT id, name, grade FROM members ORDER BY grade, name")
+    members = cursor.fetchall()
+    members_list = [{'id': row[0], 'name': row[1], 'grade': row[2]} for row in members]
+    
+    return render_template('submit_form.html', members=members_list)
 
 @app.route('/schedule')
 def schedule():
-    try:
-        query = """
-        SELECT s.shift_date, m.name, s.payment_type FROM shifts s
-        JOIN members m ON s.member_id = m.id ORDER BY s.shift_date, m.name;
-        """
-        df = pd.read_sql_query(query, get_db())
-        html_table = df.to_html(classes='table table-striped', index=False, border=1)
-        return f'<h1>確定シフト表</h1>{html_table}<br><a href="/">トップに戻る</a>'
-    except Exception as e:
-        return f"エラーが発生しました: {e}<br>（シフトがまだ生成されていない可能性があります）"
+    """確定シフト表ページ"""
+    db = get_db()
+    query = "SELECT s.shift_date, m.name, s.payment_type FROM shifts s JOIN members m ON s.member_id = m.id ORDER BY s.shift_date, m.name;"
+    df = pd.read_sql_query(query, db)
+    # to_htmlでHTMLテーブルに変換
+    table_html = df.to_html(classes='striped', index=False, border=0) if not df.empty else "<p>まだシフトが生成されていません。</p>"
+    return render_template('schedule.html', table_html=table_html)
 
-# ★★★シフト実行のための新しいページを追加★★★
+
 @app.route('/run-algorithm')
 def run_algorithm_route():
-    print("シフト生成リクエストを受け取りました。")
-    # algorithm.pyのメイン関数を呼び出す
-    generate_all_shifts()
-    print("シフト生成が完了しました。結果ページにリダイレクトします。")
-    # 処理が終わったら、結果表示ページに自動で移動（リダイレクト）させる
+    try:
+        generate_all_shifts()
+        flash("シフトの自動生成が完了しました！", "success")
+    except Exception as e:
+        flash(f"シフト生成中にエラーが発生しました: {e}", "error")
     return redirect(url_for('schedule'))
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.route('/check-availability')
+def check_availability():
+    """提出された希望シフト一覧ページ"""
+    db = get_db()
+    query = "SELECT a.shift_date, m.name, a.availability_type FROM availability a JOIN members m ON a.member_id = m.id ORDER BY a.shift_date DESC, m.name;"
+    df = pd.read_sql_query(query, db)
+    table_html = df.to_html(classes='striped', index=False, border=0) if not df.empty else "<p>まだ希望シフトが提出されていません。</p>"
+    return render_template('check_availability.html', table_html=table_html)
 
-# テスト用のコメント
+# ★★★スケジュールと希望確認用のHTMLファイルも追加★★★
+
+@app.route('/schedule.html')
+def schedule_page():
+    return render_template('schedule.html')
+
+@app.route('/check_availability.html')
+def check_availability_page():
+    return render_template('check_availability.html')

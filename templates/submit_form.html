@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}希望シフト提出{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h2>希望シフト提出フォーム</h2>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="message {{ category }}">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form action="/submit" method="post">
+        <label for="member">名前:</label>
+        <select name="member_id" id="member" required>
+            <option value="">-- 名前を選択してください --</option>
+            {% for member in members %}
+            <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+            {% endfor %}
+        </select>
+
+        <label for="date">日付:</label>
+        <input type="date" id="date" name="shift_date" required>
+
+        <fieldset>
+            <legend>希望:</legend>
+            <label for="full_day">
+                <input type="radio" id="full_day" name="availability_type" value="full_day" checked>
+                1日入れる
+            </label>
+            <label for="am_only">
+                <input type="radio" id="am_only" name="availability_type" value="am_only">
+                午前のみ
+            </label>
+            <label for="pm_only">
+                <input type="radio" id="pm_only" name="availability_type" value="pm_only">
+                午後のみ
+            </label>
+            <label for="unavailable">
+                <input type="radio" id="unavailable" name="availability_type" value="unavailable">
+                入れない
+            </label>
+        </fieldset>
+
+        <button type="submit">提出する</button>
+    </form>
+</article>
+{% endblock %}
