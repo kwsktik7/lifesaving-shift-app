@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}管理者ダッシュボード{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h2>管理者ダッシュボード</h2>
+    </header>
+
+    <div class="grid">
+        <!-- シフト生成ボタン -->
+        <a href="/run-algorithm" role="button" class="contrast">
+            <hgroup>
+                <h4>シフトを自動生成する</h4>
+                <p>現在の希望シフトを元に、新しいシフト表を作成します。<br>（注意：既存のシフト表は上書きされます）</p>
+            </hgroup>
+        </a>
+        <!-- 希望シフト確認ページへのリンク -->
+        <a href="/check-availability" role="button">
+            <hgroup>
+                <h4>希望シフトの提出状況</h4>
+                <p>全メンバーから提出された希望シフトの一覧を確認します。</p>
+            </hgroup>
+        </a>
+    </div>
+    
+</article>
+{% endblock %}

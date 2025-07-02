@@ -1,54 +1,87 @@
 {% extends "base.html" %}
 
-{% block title %}希望シフト提出{% endblock %}
+{% block title %}希望シフト一括提出{% endblock %}
 
 {% block content %}
 <article>
     <header>
-        <h2>希望シフト提出フォーム</h2>
+        <h2>希望シフト一括提出</h2>
+        <p>名前を選択すると、過去の提出状況が読み込まれます。まとめて希望を提出してください。</p>
     </header>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <p class="message {{ category }}">{{ message }}</p>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-
-    <form action="/submit" method="post">
-        <label for="member">名前:</label>
-        <select name="member_id" id="member" required>
-            <option value="">-- 名前を選択してください --</option>
+    <!-- STEP 1: 名前を選択するフォーム -->
+    <form method="GET" action="{{ url_for('submit_availability') }}">
+        <label for="member">名前を選択:</label>
+        <select name="member_id" id="member" onchange="this.form.submit()">
+            <option value="">-- メンバーを選択 --</option>
             {% for member in members %}
-            <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+            <option value="{{ member.id }}" {% if member.id == selected_member_id %}selected{% endif %}>
+                {{ member.name }} ({{ member.grade }}年)
+            </option>
             {% endfor %}
         </select>
-
-        <label for="date">日付:</label>
-        <input type="date" id="date" name="shift_date" required>
-
-        <fieldset>
-            <legend>希望:</legend>
-            <label for="full_day">
-                <input type="radio" id="full_day" name="availability_type" value="full_day" checked>
-                1日入れる
-            </label>
-            <label for="am_only">
-                <input type="radio" id="am_only" name="availability_type" value="am_only">
-                午前のみ
-            </label>
-            <label for="pm_only">
-                <input type="radio" id="pm_only" name="availability_type" value="pm_only">
-                午後のみ
-            </label>
-            <label for="unavailable">
-                <input type="radio" id="unavailable" name="availability_type" value="unavailable">
-                入れない
-            </label>
-        </fieldset>
-
-        <button type="submit">提出する</button>
     </form>
+
+    <!-- 名前が選択されたら、STEP 2のシフト提出フォームを表示 -->
+    {% if selected_member_id %}
+    <hr>
+    <h3>{{ selected_member_name }} さんの希望シフト</h3>
+    
+    <!-- 提出完了メッセージなどを表示 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <p style="color: green;"><b>{{ message }}</b></p>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- STEP 2: シフトをまとめて提出するフォーム -->
+    <form method="POST" action="{{ url_for('submit_availability') }}">
+        <!-- 選択中のメンバーIDを隠しデータとして送信 -->
+        <input type="hidden" name="member_id" value="{{ selected_member_id }}">
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>日付</th>
+                    <th>曜日</th>
+                    <th>希望</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Pythonから渡された日付リストをループ処理 -->
+                {% for day in days %}
+                <tr>
+                    <td>{{ day.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ day.weekday }}</td>
+                    <td>
+                        <fieldset>
+                            <label style="display: inline-block; margin-right: 10px;">
+                                <input type="radio" name="availability_{{ day.date.strftime('%Y-%m-%d') }}" value="full_day" 
+                                {% if availability.get(day.date.strftime('%Y-%m-%d')) == 'full_day' %}checked{% endif %}> 1日
+                            </label>
+                            <label style="display: inline-block; margin-right: 10px;">
+                                <input type="radio" name="availability_{{ day.date.strftime('%Y-%m-%d') }}" value="am_only"
+                                {% if availability.get(day.date.strftime('%Y-%m-%d')) == 'am_only' %}checked{% endif %}> 午前
+                            </label>
+                            <label style="display: inline-block; margin-right: 10px;">
+                                <input type="radio" name="availability_{{ day.date.strftime('%Y-%m-%d') }}" value="pm_only"
+                                {% if availability.get(day.date.strftime('%Y-%m-%d')) == 'pm_only' %}checked{% endif %}> 午後
+                            </label>
+                            <label style="display: inline-block;">
+                                <input type="radio" name="availability_{{ day.date.strftime('%Y-%m-%d') }}" value="unavailable"
+                                {% if not availability.get(day.date.strftime('%Y-%m-%d')) or availability.get(day.date.strftime('%Y-%m-%d')) == 'unavailable' %}checked{% endif %}> 不可
+                            </label>
+                        </fieldset>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <br>
+        <button type="submit">全ての希望をまとめて提出する</button>
+    </form>
+    {% endif %}
 </article>
 {% endblock %}

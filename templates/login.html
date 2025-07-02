@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}ログイン・新規登録{% endblock %}
+
+{% block content %}
+<article>
+    <hgroup>
+        <h1>ようこそ！</h1>
+        <h2>シフト希望を提出するために、ログインまたは新規登録をしてください。</h2>
+    </hgroup>
+
+    <!-- flashメッセージ（エラーや成功通知）を表示する場所 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <aside>
+        {% for category, message in messages %}
+          <p class="{{ category }}">{{ message }}</p>
+        {% endfor %}
+        </aside>
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid">
+        <!-- 既存メンバーのログインフォーム -->
+        <section>
+            <h3>以前に登録したことがある方</h3>
+            <form action="/login" method="POST">
+                <label for="member">自分の名前を選択</label>
+                <select name="member_id" id="member" required>
+                    <option value="" selected>-- ここから選択 --</option>
+                    {% for member in members %}
+                    <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">ログインして希望提出へ</button>
+            </form>
+        </section>
+
+        <!-- 新規メンバー登録フォーム -->
+        <section>
+            <h3>初めて利用する方</h3>
+            <form action="/register" method="POST">
+                <label for="new_name">名前</label>
+                <input type="text" id="new_name" name="name" placeholder="例：湘南 太郎" required>
+                
+                <label for="grade">学年</label>
+                <select id="grade" name="grade" required>
+                    <option value="" disabled selected>選択してください</option>
+                    <option value="1">1年生</option>
+                    <option value="2">2年生</option>
+                    <option value="3">3年生</option>
+                    <option value="4">4年生</option>
+                </select>
+                <button type="submit">新規登録して希望提出へ</button>
+            </form>
+        </section>
+    </div>
+
+    <hr>
+    <footer>
+        <a href="/admin">管理者ページへ</a>
+    </footer>
+
+</article>
+{% endblock %}
