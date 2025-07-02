@@ -68,15 +68,13 @@ def register():
     flash(f"ようこそ、{name}さん！メンバーとして登録しました。", "success")
     return redirect(url_for('submit_availability', member_id=new_member_id))
 
-# ★★★ ここからが大きく変更・修正される部分 ★★★
 
 @app.route('/submit/<int:member_id>', methods=['GET', 'POST'])
 def submit_availability(member_id):
-    """希望シフトの一括提出ページ（URLにメンバーIDを含む形に変更）"""
+    """希望シフトの一括提出ページ"""
     db = get_db()
     cursor = db.cursor()
 
-    # まず、URLで指定されたメンバーが本当に存在するか確認
     cursor.execute("SELECT name, grade FROM members WHERE id = ? AND is_active = 1", (member_id,))
     member_info = cursor.fetchone()
     if not member_info:
@@ -85,20 +83,17 @@ def submit_availability(member_id):
     
     selected_member_name = member_info[0]
 
-    # --- フォームが送信された時（POST）のデータ保存処理 ---
     if request.method == 'POST':
         availability_data_to_save = []
         current_date = START_DATE
         while current_date <= END_DATE:
             date_str = current_date.strftime('%Y-%m-%d')
-            # 各日付の希望データをフォームから取得
             availability_type = request.form.get(f"availability_{date_str}")
             if availability_type:
                 availability_data_to_save.append((member_id, date_str, availability_type))
             current_date += timedelta(days=1)
 
         try:
-            # executemanyで、全日程のデータを一度にデータベースに登録（または上書き）
             cursor.executemany(
                 "INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)",
                 availability_data_to_save
@@ -106,13 +101,14 @@ def submit_availability(member_id):
             db.commit()
             flash("全ての希望シフトを更新しました！", "success")
         except Exception as e:
-            db.rollback() # エラーが起きたら変更を元に戻す
+            db.rollback()
             flash(f"データベースの更新中にエラーが発生しました: {e}", "error")
 
-        # 処理が終わったら、同じページを再表示
-        return redirect(url_for('submit_availability', member_id=member_id))
+        # ★★★ ここを修正 ★★★
+        # 処理が終わったら、ログインページ（ホーム）にリダイレクトする
+        return redirect(url_for('login_page'))
 
-    # --- ページを最初に表示する時（GET）のデータ読み込み処理 ---
+    # GETリクエスト時の処理
     days = []
     weekdays_jp = ["月", "火", "水", "木", "金", "土", "日"]
     current_date = START_DATE
@@ -120,7 +116,6 @@ def submit_availability(member_id):
         days.append({'date': current_date, 'weekday': weekdays_jp[current_date.weekday()]})
         current_date += timedelta(days=1)
     
-    # データベースから、このメンバーの既存の希望シフトを読み込む
     availability = {}
     cursor.execute("SELECT shift_date, availability_type FROM availability WHERE member_id = ?", (member_id,))
     for row in cursor.fetchall():
@@ -179,3 +174,6 @@ def check_availability():
         flash(f"エラーが発生しました: {e}", "error")
         return render_template('check_availability.html', table_html="<p>希望シフトの表示中にエラーが発生しました。</p>")
 
+# このファイルが `python app.py` で直接実行された場合のみ、テスト用のサーバーを起動
+if __name__ == '__main__':
+    app.run(debug=True)
