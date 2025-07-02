@@ -1,44 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}希望シフト一括提出{% endblock %}
+{% block title %}希望シフト提出{% endblock %}
 
 {% block content %}
 <article>
     <header>
-        <h2>希望シフト一括提出</h2>
-        <p>名前を選択すると、過去の提出状況が読み込まれます。まとめて希望を提出してください。</p>
+        <!-- ログインしているメンバーの名前を表示 -->
+        <h2>{{ selected_member_name }} さんの希望シフト</h2>
+        <p>全期間の希望をまとめて提出・更新できます。</p>
     </header>
 
-    <!-- STEP 1: 名前を選択するフォーム -->
-    <form method="GET" action="{{ url_for('submit_availability') }}">
-        <label for="member">名前を選択:</label>
-        <select name="member_id" id="member" onchange="this.form.submit()">
-            <option value="">-- メンバーを選択 --</option>
-            {% for member in members %}
-            <option value="{{ member.id }}" {% if member.id == selected_member_id %}selected{% endif %}>
-                {{ member.name }} ({{ member.grade }}年)
-            </option>
-            {% endfor %}
-        </select>
-    </form>
-
-    <!-- 名前が選択されたら、STEP 2のシフト提出フォームを表示 -->
-    {% if selected_member_id %}
-    <hr>
-    <h3>{{ selected_member_name }} さんの希望シフト</h3>
-    
     <!-- 提出完了メッセージなどを表示 -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        {% for category, message in messages %}
-          <p style="color: green;"><b>{{ message }}</b></p>
-        {% endfor %}
+          {% for category, message in messages %}
+            <p style="color: green;"><b>{{ message }}</b></p>
+          {% endfor %}
       {% endif %}
     {% endwith %}
 
-    <!-- STEP 2: シフトをまとめて提出するフォーム -->
-    <form method="POST" action="{{ url_for('submit_availability') }}">
-        <!-- 選択中のメンバーIDを隠しデータとして送信 -->
+    <!-- シフトをまとめて提出するフォーム -->
+    <form method="POST" action="{{ url_for('submit_availability', member_id=selected_member_id) }}">
+        <!-- フォームが誰のものか、隠しデータとして送信 -->
         <input type="hidden" name="member_id" value="{{ selected_member_id }}">
         
         <table>
@@ -82,6 +65,5 @@
         <br>
         <button type="submit">全ての希望をまとめて提出する</button>
     </form>
-    {% endif %}
 </article>
 {% endblock %}
