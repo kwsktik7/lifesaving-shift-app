@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
 {% block title %}メンバー管理{% endblock %}
 
@@ -6,23 +6,15 @@
 <article>
     <header>
         <h2>メンバー管理</h2>
-        <p>現在登録されているメンバーの一覧です。不要なメンバーを削除できます。</p>
+        <p>現在登録されているメンバーの一覧です。</p>
     </header>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <p class="{{ category }}">{{ message }}</p>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
     <figure>
         <table role="grid">
             <thead>
                 <tr>
                     <th>名前</th>
                     <th>学年</th>
+                    <th>役職</th>
                     <th style="text-align: right;">操作</th>
                 </tr>
             </thead>
@@ -31,11 +23,10 @@
                 <tr>
                     <td>{{ member.name }}</td>
                     <td>{{ member.grade }}年</td>
+                    <td>{{ member.position }}</td>
                     <td style="text-align: right;">
-                        <!-- ★★★ このonclickのメッセージを修正 ★★★ -->
                         <form method="POST" action="{{ url_for('delete_member', member_id=member.id) }}" style="margin-bottom: 0;">
-                            <button type="submit" class="secondary outline" 
-                                    onclick="return confirm('本当に「{{ member.name }}」さんを削除しますか？\nこのメンバーに関連する全ての希望シフトと確定シフトも完全に削除され、元に戻すことはできません。');">
+                            <button type="submit" class="secondary outline" onclick="return confirm('本当に「{{ member.name }}」さんを削除しますか？\nこの操作は元に戻せません。');">
                                 削除
                             </button>
                         </form>
@@ -43,7 +34,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="3">現在、有効なメンバーはいません。</td>
+                    <td colspan="4" style="text-align: center; padding: 2rem;">現在、有効なメンバーはいません。</td>
                 </tr>
                 {% endfor %}
             </tbody>

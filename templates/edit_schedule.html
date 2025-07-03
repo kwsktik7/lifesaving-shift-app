@@ -1,0 +1,90 @@
+{% extends "admin_base.html" %}
+
+{% block title %}シフト編集{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <style>
+        .member-list { list-style: none; padding: 0; margin: 0; }
+        .member-list li {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.75rem 1rem; border-radius: 8px;
+            transition: background-color 0.2s ease-in-out;
+            border-bottom: 1px solid var(--pico-card-border-color);
+        }
+        .member-list li:last-child { border-bottom: none; }
+        .member-list li:hover { background-color: rgba(0, 0, 0, 0.03); }
+        .btn-icon {
+            background: transparent; border: none; padding: 0.5rem; cursor: pointer;
+            border-radius: 50%; width: 38px; height: 38px;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .btn-icon:hover { background-color: rgba(0, 0, 0, 0.05); }
+        .btn-icon:active { transform: scale(0.9); }
+        .btn-icon svg { width: 20px; height: 20px; }
+        .btn-add svg { stroke: var(--pico-primary); }
+        .btn-remove svg { stroke: #dc3545; } /* Bootstrap Danger Red */
+    </style>
+{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h2>シフト編集：{{ shift_date }}</h2>
+    </header>
+
+    <div class="grid">
+        <!-- 左側：現在の勤務メンバー -->
+        <section>
+            <h5>勤務中のメンバー ({{ assigned_members|length }}人)</h5>
+            {% if assigned_members %}
+                <ul class="member-list">
+                    {% for member in assigned_members %}
+                    <li>
+                        <span>{{ member.display_name }}</span>
+                        <form action="{{ url_for('remove_from_shift', shift_date=shift_date, member_id=member.id) }}" method="POST" style="margin:0;">
+                            <!-- ★★★ アイコンのコードを正しいものに修正 ★★★ -->
+                            <button type="submit" class="btn-icon btn-remove" aria-label="シフトから外す" title="シフトから外す">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                                </svg>
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>誰も勤務していません。</p>
+            {% endif %}
+        </section>
+
+        <!-- 右側：交代可能なメンバー -->
+        <section>
+            <h5>交代可能なメンバー ({{ available_members|length }}人)</h5>
+            {% if available_members %}
+                <ul class="member-list">
+                    {% for member in available_members %}
+                    <li>
+                        <span>{{ member.display_name }}</span>
+                        <form action="{{ url_for('add_to_shift', shift_date=shift_date, member_id=member.id) }}" method="POST" style="margin:0;">
+                            <button type="submit" class="btn-icon btn-add" aria-label="追加" title="シフトに追加">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>交代できるメンバーがいません。</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <footer style="margin-top: 2rem;">
+        <a href="{{ url_for('schedule') }}" role="button" class="secondary">シフト表に戻る</a>
+    </footer>
+</article>
+{% endblock %}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <title>{% block title %}{% endblock %} - 逗シフト</title>
+    <style>
+        :root {
+            --pico-font-family: 'Noto Sans JP', sans-serif;
+            --pico-background-color: #f8f9fa;
+            --pico-color: #495057;
+            --pico-h1-color: #212529;
+            --pico-h2-color: #212529;
+            --pico-card-background-color: #ffffff;
+            --pico-card-border-color: #dee2e6;
+            --pico-primary: #0d6efd;
+            --pico-primary-hover: #0b5ed7;
+        }
+        body { background-color: var(--pico-background-color); }
+        main.container { max-width: 1024px; padding: 1rem 2rem 4rem 2rem; }
+        nav {
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--pico-card-border-color);
+            position: sticky; top: 0; z-index: 100;
+            padding: 0.5rem 1rem;
+        }
+        nav a { font-weight: 500; }
+        nav ul li strong { font-family: 'Poppins', sans-serif; font-weight: 700; color: var(--pico-h1-color); }
+        article {
+            border: 1px solid var(--pico-card-border-color);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+        }
+        .flash-message {
+            padding: 1rem; margin: 1.5rem 0; border-radius: var(--pico-border-radius);
+            border-left-width: 4px; font-weight: 500;
+        }
+        .flash-message.success {
+            background-color: #d1e7dd; border-left-color: #0f5132; color: #0f5132;
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <main class="container">
+        <nav>
+            <ul>
+                <li><strong>逗シフト</strong></li>
+            </ul>
+            <ul>
+                <li><a href="{{ url_for('login_page') }}" role="button" class="secondary outline">ログアウト</a></li>
+            </ul>
+        </nav>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

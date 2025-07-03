@@ -1,0 +1,44 @@
+{% extends "admin_base.html" %}
+
+{% block title %}事務レポート{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h2>事務レポート</h2>
+        <p>メンバーごとの勤務日数と給与タイプの集計です。</p>
+    </header>
+    <figure>
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th>メンバー名</th>
+                    <th>役職</th>
+                    <th>合計勤務</th>
+                    <th>タイプ1の日数</th>
+                    <th>タイプVの日数</th>
+                    <th>V割合 (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in summary_data %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.position }}</td>
+                    <td>{{ item.total_days }} 日</td>
+                    <td>{{ item.type_1_days }} 日</td>
+                    <td>{{ item.type_v_days }} 日</td>
+                    <td>{{ "%.1f"|format(item.v_ratio) }}%</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem;">
+                        集計データがありません。まず「シフトを自動生成する」を実行してください。
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </figure>
+</article>
+{% endblock %}

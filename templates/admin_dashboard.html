@@ -1,42 +1,38 @@
-{% extends "base.html" %}
-
-{% block title %}管理者ダッシュボード{% endblock %}
-
+{% extends "admin_base.html" %}
+{% block title %}ダッシュボード{% endblock %}
 {% block content %}
-<article>
-    <header>
-        <h2>管理者ダッシュボード</h2>
-        <p>ここからシフトの生成やメンバー管理ができます。</p>
-    </header>
-</article>
-
+<header style="text-align: center; margin: 3rem 0 4rem 0;">
+    <h2 style="font-size: 2.5rem; font-weight: 700;">管理者ダッシュボード</h2>
+    <p style="font-size: 1.1rem; color: var(--pico-secondary);">主要な操作をここから実行します。</p>
+</header>
 <div class="grid">
-    <!-- カード1: シフト生成 -->
     <article>
         <hgroup>
             <h4>⚙️ シフトを自動生成する</h4>
-            <p>最新の希望シフトを元に、公平なシフト表を再計算します。</p>
+            <p>最新の希望シフトを元に、公平なシフト表と事務レポートを再計算します。</p>
         </hgroup>
-        <footer>
-            <a href="/run-algorithm" role="button" class="contrast" onclick="return confirm('新しいシフトを生成します。現在のシフト表は上書きされますが、よろしいですか？');">
-                生成を実行
-            </a>
-        </footer>
+        <a href="/run-algorithm" role="button" class="btn btn-sand-primary" onclick="return confirm('新しいシフトを生成します。現在のシフト表とレポートは上書きされますが、よろしいですか？');">
+            生成を実行
+        </a>
     </article>
-
-    <!-- ★★★ 希望シフト確認のカードを削除しました ★★★ -->
-    
-    <!-- カード2: メンバー管理 -->
     <article>
          <hgroup>
-            <h4>👥 メンバーを管理する</h4>
-            <p>登録されているメンバーの一覧を表示し、削除することができます。</p>
+            <h4>📋 確定シフト表を見る</h4>
+            <p>現在確定しているシフト表を確認し、必要に応じて手動でメンバーを入れ替えます。</p>
         </hgroup>
-        <footer>
-            <a href="/manage-members" role="button" class="secondary">
-                メンバー管理へ
-            </a>
-        </footer>
+        <a href="/schedule" role="button" class="btn btn-sand-secondary">
+            シフト表を確認・編集
+        </a>
+    </article>
+    <!-- ★★★ 事務レポートへのリンクを追加 ★★★ -->
+    <article>
+         <hgroup>
+            <h4>📊 事務レポート</h4>
+            <p>メンバーごとの勤務日数や給与タイプの割合を集計したレポートを表示します。</p>
+        </hgroup>
+        <a href="/summary" role="button" class="btn btn-sand-secondary">
+            レポートを表示
+        </a>
     </article>
 </div>
 {% endblock %}
