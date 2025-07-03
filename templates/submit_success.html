@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}提出完了{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <!-- 3秒後にホーム画面へ自動でリダイレクトします -->
+    <meta http-equiv="refresh" content="3; url={{ url_for('login_page') }}">
+{% endblock %}
+
+{% block content %}
+<article style="text-align: center;">
+    <header>
+        <h2 style="color: var(--pico-color-green-500);">✅ 希望シフトを提出しました！</h2>
+    </header>
+    <p>ご協力ありがとうございます。データは正常に保存されました。</p>
+    <p>3秒後に自動でホーム画面に戻ります。</p>
+    <footer>
+        <a href="{{ url_for('login_page') }}" role="button" class="secondary">すぐにホームに戻る</a>
+    </footer>
+</article>
+{% endblock %}

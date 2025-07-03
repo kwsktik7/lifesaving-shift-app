@@ -22,8 +22,8 @@ STAFF_REQUIREMENTS = {
 
 # 給与タイプの比率（合計で1.0になるように）
 PAYMENT_RATIO = {
-    'type_1': 0.8, # 8割が高給与
-    'type_V': 0.2  # 2割が低給与
+    'type_1': 0.7, # 7割が高給与
+    'type_V': 0.3  # 3割が低給与
 }
 
 

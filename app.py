@@ -2,7 +2,6 @@ from flask import Flask, g, redirect, url_for, render_template, request, flash
 import sqlite3
 import pandas as pd
 from datetime import date, timedelta
-# algorithm.pyから必要な関数と変数をインポート
 from algorithm import generate_all_shifts, START_DATE, END_DATE
 
 # --- アプリケーションの基本設定 ---
@@ -90,15 +89,20 @@ def submit_availability(member_id):
             current_date += timedelta(days=1)
 
         try:
-            cursor.executemany("INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)", availability_data_to_save)
+            cursor.executemany(
+                "INSERT OR REPLACE INTO availability (member_id, shift_date, availability_type) VALUES (?, ?, ?)",
+                availability_data_to_save
+            )
             db.commit()
-            flash("全ての希望シフトを更新しました！", "success")
         except Exception as e:
             db.rollback()
             flash(f"データベースの更新中にエラーが発生しました: {e}", "error")
+            return redirect(url_for('submit_availability', member_id=member_id))
 
-        return redirect(url_for('login_page'))
+        # ★★★ 処理が終わったら、新しい完了ページに移動する ★★★
+        return redirect(url_for('success_page'))
 
+    # GETリクエスト時の処理
     days = []
     weekdays_jp = ["月", "火", "水", "木", "金", "土", "日"]
     current_date = START_DATE
@@ -117,6 +121,13 @@ def submit_availability(member_id):
                            days=days, 
                            availability=availability)
 
+# ★★★ 新しい完了ページ用のルートを追加 ★★★
+@app.route('/success')
+def success_page():
+    """提出完了ページを表示"""
+    return render_template('submit_success.html')
+
+
 # --- 管理者向けページ ---
 
 @app.route('/admin')
@@ -131,14 +142,11 @@ def manage_members():
     members_list = [{'id': row[0], 'name': row[1], 'grade': row[2]} for row in cursor.fetchall()]
     return render_template('manage_members.html', members=members_list)
 
-# ★★★ この関数を修正 ★★★
 @app.route('/delete-member/<int:member_id>', methods=['POST'])
 def delete_member(member_id):
-    """メンバーをデータベースから完全に削除する"""
     db = get_db()
     cursor = db.cursor()
     try:
-        # 関連するテーブルから順番に削除する
         cursor.execute("DELETE FROM shifts WHERE member_id = ?", (member_id,))
         cursor.execute("DELETE FROM availability WHERE member_id = ?", (member_id,))
         cursor.execute("DELETE FROM members WHERE id = ?", (member_id,))
@@ -147,7 +155,6 @@ def delete_member(member_id):
     except Exception as e:
         db.rollback()
         flash(f"メンバーの削除中にエラーが発生しました: {e}", "error")
-        
     return redirect(url_for('manage_members'))
 
 

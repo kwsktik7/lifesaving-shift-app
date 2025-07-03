@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Pico.cssを読み込んで、自動でデザインを適用 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <title>{% block title %}{% endblock %} - シフト管理アプリ</title>
+    <!-- ★★★ 個別ページでheadタグ内を拡張できるように、このブロックを追加 ★★★ -->
+    {% block head %}{% endblock %}
 </head>
 <body>
     <main class="container">
@@ -16,11 +17,9 @@
             <ul>
                 <li><a href="/">ホーム</a></li>
                 <li><a href="/schedule">シフト表</a></li>
-                <!-- ★★★ この不要な行を削除しました ★★★ -->
             </ul>
         </nav>
         
-        <!-- この部分が、各ページの内容に置き換わる -->
         {% block content %}{% endblock %}
         
     </main>
