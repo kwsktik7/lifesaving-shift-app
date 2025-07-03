@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ログイン - 逗シフト</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #f39c12;
+            --background-start: #0f2027;
+            --background-mid: #203a43;
+            --background-end: #2c5364;
+            --card-background: rgba(0, 0, 0, 0.2);
+            --text-color: #ffffff;
+            --input-bg-color: rgba(255, 255, 255, 0.05);
+            --input-border-color: rgba(255, 255, 255, 0.2);
+            --error-color: #fca5a5; /* Red 300 */
+        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Noto Sans JP', sans-serif; color: var(--text-color); }
+        .container { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(45deg, var(--background-start), var(--background-mid), var(--background-end)); }
+        .login-card { background: var(--card-background); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.18); padding: 2.5rem; width: 90%; max-width: 400px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); animation: fadeIn 0.8s ease-out; z-index: 10; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        h2 { font-family: 'Poppins', sans-serif; text-align: center; font-size: 2rem; margin-bottom: 2rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 700; }
+        input[type="password"] { width: 100%; padding: 1rem; border-radius: 8px; border: 1px solid var(--input-border-color); background-color: var(--input-bg-color); color: var(--text-color); font-size: 1rem; transition: all 0.3s; box-sizing: border-box; }
+        input[type="password"]:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px hsla(39, 83%, 58%, 0.5); }
+        button { width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; margin-top: 1.5rem; background-color: var(--primary-color); color: white; }
+        button:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); filter: brightness(1.1); }
+        .back-link { text-align: center; margin-top: 1.5rem; }
+        .back-link a { color: var(--text-color); text-decoration: none; opacity: 0.7; transition: opacity 0.3s; }
+        .back-link a:hover { opacity: 1; }
+        .error-message { color: var(--error-color); background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.75rem; border-radius: 8px; margin-bottom: 1.5rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <article class="login-card">
+            <h2>管理者ログイン</h2>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        {% if category == 'error' %}
+                            <div class="error-message">{{ message }}</div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <form method="POST">
+                <label for="password">パスワード</label>
+                <input type="password" id="password" name="password" required autofocus>
+                <button type="submit">ログイン</button>
+            </form>
+            <div class="back-link">
+                <a href="{{ url_for('login_page') }}">メンバー用ログインに戻る</a>
+            </div>
+        </article>
+    </div>
+</body>
+</html>

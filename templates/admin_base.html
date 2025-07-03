@@ -3,79 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Pico.cssはリセットと基本的な構造のために最小限で利用 -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-    <!-- Google Fonts: Inter -->
+    <title>{% block title %}{% endblock %} - 逗シフト 管理者</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-    
-    <title>{% block title %}{% endblock %} - 逗シフト 管理者</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* --- デザインシステム定義 --- */
         :root {
-            --pico-font-family: 'Inter', 'Noto Sans JP', sans-serif;
-            --pico-background-color: #f8f9fa; /* 明るいグレー */
-            --pico-color: #495057; /* テキストカラー */
-            --pico-h1-color: #212529;
-            --pico-h2-color: #212529;
-            --pico-card-background-color: #ffffff;
-            --pico-card-border-color: #dee2e6;
-            --pico-primary: #0d6efd; /* Bootstrap Blue */
-            --pico-primary-hover: #0b5ed7;
-            --pico-primary-focus: rgba(13, 110, 253, 0.25);
-            --pico-secondary: #6c757d;
-            --pico-secondary-hover: #5c636a;
+            --primary-color: #f39c12;
+            --background-start: #0f2027;
+            --background-mid: #203a43;
+            --background-end: #2c5364;
+            --card-background: rgba(17, 25, 40, 0.75);
+            --text-color: #ffffff;
+            --input-bg-color: rgba(255, 255, 255, 0.05);
+            --input-border-color: rgba(255, 255, 255, 0.2);
+            --secondary-text-color: #cbd5e1; /* Slate 300 */
+            --table-border-color: rgba(255, 255, 255, 0.15);
         }
 
-        body {
-            background-color: var(--pico-background-color);
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            font-family: 'Noto Sans JP', sans-serif;
+            color: var(--text-color);
+            background: linear-gradient(45deg, var(--background-start), var(--background-mid), var(--background-end));
+            background-attachment: fixed;
         }
-        main.container {
+
+        .ocean { 
+            height: 200px;
+            width: 100%;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            z-index: -1;
+        }
+        .wave {
+            background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/85486/wave.svg) repeat-x; 
+            position: absolute;
+            top: -198px;
+            width: 6400px;
+            height: 198px;
+            animation: wave 10s cubic-bezier( 0.36, 0.45, 0.63, 0.53) infinite;
+            transform: translate3d(0, 0, 0);
+        }
+        .wave:nth-of-type(2) {
+            top: -175px;
+            animation: wave 10s cubic-bezier( 0.36, 0.45, 0.63, 0.53) -.125s infinite, swell 7s ease -1.25s infinite;
+            opacity: 1;
+        }
+        @keyframes wave { 0% { margin-left: 0; } 100% { margin-left: -1600px; } }
+        @keyframes swell { 0%, 100% { transform: translate3d(0,-25px,0); } 50% { transform: translate3d(0,5px,0); } }
+
+        .container {
             max-width: 1200px;
-            padding: 1rem 2rem 4rem 2rem;
+            margin: 0 auto;
+            padding: 2rem;
         }
+
         nav {
-            background-color: rgba(255, 255, 255, 0.8);
+            background: rgba(0,0,0,0.2);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--pico-card-border-color);
-            position: sticky; top: 0; z-index: 100;
-            padding: 0.5rem 1rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 0.5rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            position: sticky;
+            top: 1rem;
+            z-index: 100;
         }
-        nav a { font-weight: 500; }
-        nav ul li strong { font-family: 'Poppins', sans-serif; font-weight: 700; color: var(--pico-h1-color); }
-        
+        nav strong { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 1.25rem; }
+        nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.5rem; align-items: center;}
+        nav a { color: var(--secondary-text-color); text-decoration: none; font-weight: 700; transition: color 0.3s; padding: 0.5rem; font-size: 1rem; }
+        nav a:hover, nav a.active { color: var(--text-color); }
+        nav a[role="button"] { background-color: transparent; border: 1px solid var(--primary-color); color: var(--primary-color); padding: 0.6rem 1.2rem; border-radius: 8px; font-size: 0.9rem; }
+        nav a[role="button"]:hover { background-color: var(--primary-color); color: white; }
+
         article {
-            border: 1px solid var(--pico-card-border-color);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            background: var(--card-background);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2.5rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
-        .flash-message {
-            padding: 1rem; margin: 1.5rem 0; border-radius: var(--pico-border-radius);
-            border-left-width: 4px; font-weight: 500;
+        h2 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 2.25rem; margin-bottom: 0.5rem; }
+        h4, h5 { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 1.25rem; }
+        p { color: var(--secondary-text-color); font-size: 1rem; }
+        
+        .flash-message { padding: 1rem; margin: 1.5rem 0; border-radius: 8px; border-left-width: 4px; font-weight: 500; }
+        .flash-message.success { background-color: rgba(16, 185, 129, 0.1); border-left-color: #10B981; color: #6EE7B7; }
+        .flash-message.error { background-color: rgba(239, 68, 68, 0.1); border-left-color: #EF4444; color: #FCA5A5; }
+
+        table { border-color: var(--table-border-color); font-size: 1rem; }
+        th { color: var(--text-color); font-weight: 700; }
+        td { color: var(--secondary-text-color); padding: 0.75rem 1rem; }
+        tbody tr:nth-child(odd) { background-color: rgba(255,255,255,0.03); }
+        
+        button, a[role="button"] {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 1rem 2rem;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all 0.3s;
         }
-        .flash-message.success {
-            background-color: #d1e7dd; border-left-color: #0f5132; color: #0f5132;
+        button:hover, a[role="button"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            filter: brightness(1.1);
         }
-        .flash-message.error {
-            background-color: #f8d7da; border-left-color: #842029; color: #842029;
+        button.secondary, a.secondary[role="button"] {
+            background-color: var(--input-bg-color);
+            border: 1px solid var(--input-border-color);
+            color: var(--secondary-text-color);
         }
+        button.secondary:hover, a.secondary[role="button"]:hover {
+            background-color: rgba(255,255,255,0.1);
+            color: white;
+        }
+
     </style>
     {% block head %}{% endblock %}
 </head>
 <body>
-    <main class="container">
+    <div class="ocean">
+        <div class="wave"></div>
+        <div class="wave"></div>
+    </div>
+    <div class="container">
         <nav>
+            <strong>逗シフト - 管理者モード</strong>
             <ul>
-                <li><strong>逗シフト - 管理者モード</strong></li>
-            </ul>
-            <ul>
-                <!-- ★★★ ここを修正 ★★★ -->
                 <li><a href="{{ url_for('admin_dashboard') }}">ホーム</a></li>
-                <li><a href="{{ url_for('schedule') }}">シフト表</a></li>
                 <li><a href="{{ url_for('manage_members') }}">メンバー管理</a></li>
-                <li><a href="{{ url_for('login_page') }}" role="button" class="secondary outline">ログアウト</a></li>
+                <li><a href="{{ url_for('schedule') }}">シフト表</a></li>
+                <li><a href="{{ url_for('summary_page') }}">事務レポート</a></li>
+                <li><a href="{{ url_for('admin_logout') }}" role="button">ログアウト</a></li>
             </ul>
         </nav>
         
@@ -88,6 +161,6 @@
         {% endwith %}
 
         {% block content %}{% endblock %}
-    </main>
+    </div>
 </body>
 </html>

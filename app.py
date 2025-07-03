@@ -1,31 +1,48 @@
-from flask import Flask, g, redirect, url_for, render_template, request, flash
+from flask import Flask, g, redirect, url_for, render_template, request, flash, session
 import sqlite3
 import pandas as pd
 from datetime import date, timedelta
 import random
-from algorithm import generate_all_shifts, START_DATE, END_DATE
+from functools import wraps
+# algorithm.pyから必要な関数と変数をインポート
+from algorithm import generate_all_shifts, recalculate_and_save_summary, START_DATE, END_DATE
 
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
+# セッション管理のための秘密鍵（必ず複雑な文字列に変更してください）
 app.secret_key = 'your-super-secret-key-please-change' 
+# 管理者パスワード
+ADMIN_PASSWORD = 'zushi' 
 
 # --- データベース接続の管理 ---
 def get_db():
+    """リクエストごとにデータベース接続を管理します。"""
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_NAME)
-        db.row_factory = sqlite3.Row # 列名でアクセスできるようにする
+        # 辞書のように列名でアクセスできるように設定
+        db.row_factory = sqlite3.Row
     return db
 
 @app.teardown_appcontext
 def close_connection(exception):
+    """各リクエストの最後に、データベース接続を自動的に閉じます。"""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
-# --- メンバー関連ページ ---
+# --- 管理者ログインをチェックするための「デコレータ」 ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # sessionに 'admin_logged_in' がなければ、ログインページに強制移動
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
+# --- メンバー関連ページ ---
 @app.route('/')
 def login_page():
     """アプリの入り口となる、ログイン/新規登録ページを表示します。"""
@@ -127,27 +144,50 @@ def success_page():
 
 # --- 管理者向けページ ---
 
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    """管理者ログインページ"""
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_PASSWORD:
+            session['admin_logged_in'] = True
+            session.permanent = False # ブラウザを閉じたらセッションが切れる
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('パスワードが違います。', 'error')
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    """管理者ログアウト処理"""
+    session.pop('admin_logged_in', None)
+    flash('ログアウトしました。', 'success')
+    return redirect(url_for('login_page'))
+
 @app.route('/admin')
+@admin_required
 def admin_dashboard():
-    """管理者用のダッシュボードページ"""
+    """管理者ダッシュボード"""
     return render_template('admin_dashboard.html')
 
 @app.route('/manage-members')
+@admin_required
 def manage_members():
-    """メンバーの一覧表示と削除を行う管理者ページ"""
+    """メンバー管理ページ"""
     cursor = get_db().cursor()
     cursor.execute("SELECT id, name, grade, position FROM members WHERE is_active = 1 ORDER BY grade DESC, name ASC")
     members = cursor.fetchall()
     return render_template('manage_members.html', members=members)
 
 @app.route('/delete-member/<int:member_id>', methods=['POST'])
+@admin_required
 def delete_member(member_id):
-    """メンバーをデータベースから完全に削除する"""
+    """メンバーの完全削除処理"""
     db = get_db()
     cursor = db.cursor()
     try:
         cursor.execute("DELETE FROM members WHERE id = ?", (member_id,))
         db.commit()
+        recalculate_and_save_summary() # メンバー削除後もレポートを更新
         flash("メンバーを完全に削除しました。", "success")
     except Exception as e:
         db.rollback()
@@ -156,8 +196,9 @@ def delete_member(member_id):
 
 
 @app.route('/run-algorithm')
+@admin_required
 def run_algorithm_route():
-    """シフト生成アルゴリズムを実行"""
+    """シフト自動生成の実行"""
     try:
         generate_all_shifts()
         flash("シフトの自動生成が完了しました！", "success")
@@ -166,6 +207,7 @@ def run_algorithm_route():
     return redirect(url_for('schedule'))
 
 @app.route('/schedule')
+@admin_required
 def schedule():
     """確定シフト表ページ"""
     db = get_db()
@@ -187,8 +229,9 @@ def schedule():
         return render_template('schedule.html', shifts=[])
 
 @app.route('/edit-schedule/<shift_date>')
+@admin_required
 def edit_daily_shift(shift_date):
-    """特定の日付のシフトを編集するページ"""
+    """シフト編集ページ"""
     cursor = get_db().cursor()
     cursor.execute("SELECT m.id, m.name, m.grade, m.position, a.availability_type FROM members m JOIN shifts s ON m.id = s.member_id LEFT JOIN availability a ON m.id = a.member_id AND s.shift_date = a.shift_date WHERE s.shift_date = ? ORDER BY m.grade DESC, m.name ASC", (shift_date,))
     assigned_members_raw = cursor.fetchall()
@@ -213,25 +256,31 @@ def edit_daily_shift(shift_date):
     return render_template('edit_schedule.html', shift_date=shift_date, assigned_members=assigned_members, available_members=available_members)
 
 @app.route('/add-to-shift/<shift_date>/<int:member_id>', methods=['POST'])
+@admin_required
 def add_to_shift(shift_date, member_id):
-    """メンバーをシフトに追加する"""
+    """メンバーをシフトに追加し、レポートを再集計する"""
     db = get_db()
     pay_type = random.choice(['type_1', 'type_V'])
-    db.execute("INSERT INTO shifts (shift_date, member_id, shift_type, payment_type) VALUES (?, ?, ?, ?)", (shift_date, member_id, 'full_day', pay_type))
+    db.execute("INSERT INTO shifts (shift_date, member_id, shift_type, payment_type) VALUES (?, ?, ?, ?)",
+               (shift_date, member_id, 'full_day', pay_type))
     db.commit()
+    recalculate_and_save_summary()
     return redirect(url_for('edit_daily_shift', shift_date=shift_date))
 
 @app.route('/remove-from-shift/<shift_date>/<int:member_id>', methods=['POST'])
+@admin_required
 def remove_from_shift(shift_date, member_id):
-    """メンバーをシフトから削除する"""
+    """メンバーをシフトから削除し、レポートを再集計する"""
     db = get_db()
     db.execute("DELETE FROM shifts WHERE shift_date = ? AND member_id = ?", (shift_date, member_id))
     db.commit()
+    recalculate_and_save_summary()
     return redirect(url_for('edit_daily_shift', shift_date=shift_date))
 
 @app.route('/summary')
+@admin_required
 def summary_page():
-    """メンバーごとの勤務日数を集計して表示する事務ページ"""
+    """事務レポートページ"""
     db = get_db()
     try:
         query = "SELECT m.name, m.position, s.total_days, s.type_1_days, s.type_v_days, s.v_ratio FROM shift_summary s JOIN members m ON s.member_id = m.id ORDER BY s.total_days DESC, m.name ASC;"

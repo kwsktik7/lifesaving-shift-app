@@ -6,7 +6,7 @@ cursor = connection.cursor()
 
 # --- テーブルを作成するためのSQL文 ---
 
-# membersテーブルに position TEXT NOT NULL を追加
+# メンバー情報を保存するテーブル
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS members (
 )
 ''')
 
+# 希望シフトを保存するテーブル
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS availability (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS availability (
 )
 ''')
 
+# 確定シフトを保存するテーブル
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS shifts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +41,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 )
 ''')
 
-# 新しい集計テーブル
+# 事務レポート用の集計結果を保存するテーブル
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS shift_summary (
     member_id INTEGER PRIMARY KEY,

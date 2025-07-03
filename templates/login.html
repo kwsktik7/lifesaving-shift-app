@@ -10,209 +10,46 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* === カラーテーマの定義 === */
         :root {
-            --primary-color: #f39c12; /* 夕焼けのようなオレンジ */
-            --background-start: #0f2027; /* 深い紺色 */
+            --primary-color: #f39c12;
+            --background-start: #0f2027;
             --background-mid: #203a43;
-            --background-end: #2c5364;   /* 少し明るい紺色 */
+            --background-end: #2c5364;
             --card-background: rgba(0, 0, 0, 0.2);
-            --text-color: #ffffff; /* はっきりした白 */
+            --text-color: #ffffff;
             --input-bg-color: rgba(255, 255, 255, 0.05);
             --input-border-color: rgba(255, 255, 255, 0.2);
         }
-
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            font-family: 'Noto Sans JP', sans-serif;
-            color: var(--text-color);
-            overflow: hidden; /* 波のアニメーションがはみ出ないように */
-        }
-
-        .container {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(45deg, var(--background-start), var(--background-mid), var(--background-end));
-            overflow: hidden;
-        }
-
-        .login-card {
-            background: var(--card-background);
-            backdrop-filter: blur(25px);
-            -webkit-backdrop-filter: blur(25px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            padding: 2.5rem;
-            width: 90%;
-            max-width: 800px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            animation: fadeIn 0.8s ease-out;
-            z-index: 10; /* 波の上に表示 */
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        h1, h3 {
-            font-family: 'Poppins', sans-serif;
-            text-align: center;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-        }
-        h1 {
-            font-size: 3rem;
-            text-shadow: 0 3px 6px rgba(0,0,0,0.4);
-            font-weight: 700;
-        }
-        h3 {
-            font-size: 1.5rem;
-            margin-top: 1.5rem;
-            border-bottom: 1px solid var(--input-border-color);
-            padding-bottom: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2.5rem;
-            align-items: start;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 700;
-        }
-
-        input[type="text"], select {
-            width: 100%;
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid var(--input-border-color);
-            background-color: var(--input-bg-color);
-            color: var(--text-color);
-            font-size: 1rem;
-            transition: all 0.3s;
-            box-sizing: border-box;
-        }
-        
-        input[type="text"]:focus, select:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px hsla(39, 83%, 58%, 0.5);
-        }
-
-        select {
-            appearance: none;
-            -webkit-appearance: none;
-            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
-            background-repeat: no-repeat;
-            background-position: right 0.7em top 50%, 0 0;
-            background-size: 0.65em auto, 100%;
-        }
-
-        button {
-            width: 100%;
-            padding: 1rem;
-            font-size: 1.1rem;
-            font-weight: 700;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 1rem;
-        }
-
-        button[type="submit"] {
-            background-color: var(--primary-color);
-            color: white;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-        }
-
-        button[type="submit"]:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-            filter: brightness(1.1);
-        }
-        
-        .admin-link {
-            text-align: center;
-            margin-top: 2rem;
-        }
-        .admin-link a {
-            color: var(--text-color);
-            text-decoration: none;
-            opacity: 0.7;
-            transition: opacity 0.3s;
-        }
-        .admin-link a:hover {
-            opacity: 1;
-        }
-        
-        .ocean { 
-            height: 200px;
-            width: 100%;
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            z-index: 1;
-        }
-
-        .wave {
-            background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/85486/wave.svg) repeat-x; 
-            position: absolute;
-            top: -198px;
-            width: 6400px;
-            height: 198px;
-            animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) infinite;
-            transform: translate3d(0, 0, 0);
-        }
-
-        .wave:nth-of-type(2) {
-            top: -175px;
-            animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) -.125s infinite, swell 7s ease -1.25s infinite;
-            opacity: 1;
-        }
-
-        @keyframes wave {
-            0% { margin-left: 0; }
-            100% { margin-left: -1600px; }
-        }
-
-        @keyframes swell {
-            0%, 100% { transform: translate3d(0,-25px,0); }
-            50% { transform: translate3d(0,5px,0); }
-        }
-
-        @media (max-width: 768px) {
-            .grid { grid-template-columns: 1fr; }
-            .login-card {
-                padding: 1.5rem;
-                background: none;
-                backdrop-filter: none;
-                -webkit-backdrop-filter: none;
-                border: none;
-                box-shadow: none;
-            }
-            h1 { font-size: 2.5rem; }
-        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Noto Sans JP', sans-serif; color: var(--text-color); overflow: hidden; }
+        .container { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(45deg, var(--background-start), var(--background-mid), var(--background-end)); overflow: hidden; }
+        .login-card { background: var(--card-background); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.18); padding: 2.5rem; width: 90%; max-width: 800px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); animation: fadeIn 0.8s ease-out; z-index: 10; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        h1, h3 { font-family: 'Poppins', sans-serif; text-align: center; margin-bottom: 0.5rem; font-weight: 600; }
+        h1 { font-size: 3rem; text-shadow: 0 3px 6px rgba(0,0,0,0.4); font-weight: 700; }
+        h3 { font-size: 1.5rem; margin-top: 1.5rem; border-bottom: 1px solid var(--input-border-color); padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-items: start; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 700; }
+        input[type="text"], select { width: 100%; padding: 1rem; border-radius: 8px; border: 1px solid var(--input-border-color); background-color: var(--input-bg-color); color: var(--text-color); font-size: 1rem; transition: all 0.3s; box-sizing: border-box; }
+        input[type="text"]:focus, select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px hsla(39, 83%, 58%, 0.5); }
+        select { appearance: none; -webkit-appearance: none; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 0.7em top 50%, 0 0; background-size: 0.65em auto, 100%; }
+        button { width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; margin-top: 1rem; }
+        button[type="submit"] { background-color: var(--primary-color); color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        button[type="submit"]:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); filter: brightness(1.1); }
+        .admin-link { text-align: center; margin-top: 2rem; }
+        .admin-link a { color: var(--text-color); text-decoration: none; opacity: 0.7; transition: opacity 0.3s; }
+        .admin-link a:hover { opacity: 1; }
+        .ocean { height: 200px; width: 100%; position: absolute; bottom: 0; left: 0; z-index: 1; }
+        .wave { background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/85486/wave.svg) repeat-x; position: absolute; top: -198px; width: 6400px; height: 198px; animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) infinite; transform: translate3d(0, 0, 0); }
+        .wave:nth-of-type(2) { top: -175px; animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) -.125s infinite, swell 7s ease -1.25s infinite; opacity: 1; }
+        @keyframes wave { 0% { margin-left: 0; } 100% { margin-left: -1600px; } }
+        @keyframes swell { 0%, 100% { transform: translate3d(0,-25px,0); } 50% { transform: translate3d(0,5px,0); } }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } .login-card { padding: 1.5rem; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border: none; box-shadow: none; } h1 { font-size: 2.5rem; } }
     </style>
 </head>
 <body>
     <div class="container">
         <article class="login-card">
             <h1>🌊 逗シフト</h1>
-
             {% with messages = get_flashed_messages(with_categories=true) %}
               {% if messages %}
                 {% for category, message in messages %}
@@ -220,11 +57,10 @@
                 {% endfor %}
               {% endif %}
             {% endwith %}
-
             <div class="grid">
                 <section>
                     <h3>ログイン</h3>
-                    <form action="/login" method="POST">
+                    <form action="{{ url_for('login') }}" method="POST">
                         <label for="member">自分の名前を選択</label>
                         <select name="member_id" id="member" required>
                             <option value="">-- ここから選択 --</option>
@@ -235,13 +71,11 @@
                         <button type="submit">ログインして希望提出へ</button>
                     </form>
                 </section>
-
                 <section>
                     <h3>初めての方はこちら</h3>
-                    <form action="/register" method="POST">
+                    <form action="{{ url_for('register') }}" method="POST">
                         <label for="new_name">名前</label>
                         <input type="text" id="new_name" name="name" placeholder="例：逗子 太郎" required>
-                        
                         <label for="grade" style="margin-top: 1rem;">学年</label>
                         <select id="grade" name="grade" required>
                             <option value="" disabled selected>選択してください</option>
@@ -250,7 +84,6 @@
                             <option value="3">3年生</option>
                             <option value="4">4年生</option>
                         </select>
-
                         <label for="position" style="margin-top: 1rem;">役職</label>
                         <select id="position" name="position" required>
                             <option value="" disabled selected>選択してください</option>
@@ -264,18 +97,14 @@
                             <option value="事務局">事務局</option>
                             <option value="その他">その他</option>
                         </select>
-                        
                         <button type="submit">新規登録して進む</button>
                     </form>
                 </section>
             </div>
-
             <div class="admin-link">
-                <a href="/admin">管理者ページへ</a>
+                <a href="{{ url_for('admin_login') }}">管理者ページへ</a>
             </div>
-
         </article>
-        
         <div class="ocean">
             <div class="wave"></div>
             <div class="wave"></div>
