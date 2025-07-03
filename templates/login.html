@@ -1,65 +1,219 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>逗シフト - ログイン</title>
+    <!-- Google Fontsからモダンなフォントを読み込み -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2ecc71;
+            --background-start: #4facfe;
+            --background-end: #00f2fe;
+            --card-background: rgba(255, 255, 255, 0.1);
+            --text-color: #f0f0f0;
+            --input-bg-color: rgba(255, 255, 255, 0.2);
+        }
 
-{% block title %}ログイン・新規登録{% endblock %}
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Noto Sans JP', sans-serif;
+            color: var(--text-color);
+            overflow: hidden;
+        }
 
-{% block content %}
-<article>
-    <hgroup>
-        <h1>ようこそ！</h1>
-        <h2>シフト希望を提出するために、ログインまたは新規登録をしてください。</h2>
-    </hgroup>
+        .container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, var(--background-start), var(--background-end));
+        }
 
-    <!-- flashメッセージ（エラーや成功通知）を表示する場所 -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <aside>
-        {% for category, message in messages %}
-          <p class="{{ category }}">{{ message }}</p>
-        {% endfor %}
-        </aside>
-      {% endif %}
-    {% endwith %}
+        .login-card {
+            background: var(--card-background);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 2.5rem;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            animation: fadeIn 0.8s ease-out;
+        }
 
-    <div class="grid">
-        <!-- 既存メンバーのログインフォーム -->
-        <section>
-            <h3>以前に登録したことがある方</h3>
-            <form action="/login" method="POST">
-                <label for="member">自分の名前を選択</label>
-                <select name="member_id" id="member" required>
-                    <option value="" selected>-- ここから選択 --</option>
-                    {% for member in members %}
-                    <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">ログインして希望提出へ</button>
-            </form>
-        </section>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
-        <!-- 新規メンバー登録フォーム -->
-        <section>
-            <h3>初めて利用する方</h3>
-            <form action="/register" method="POST">
-                <label for="new_name">名前</label>
-                <input type="text" id="new_name" name="name" placeholder="例：湘南 太郎" required>
-                
-                <label for="grade">学年</label>
-                <select id="grade" name="grade" required>
-                    <option value="" disabled selected>選択してください</option>
-                    <option value="1">1年生</option>
-                    <option value="2">2年生</option>
-                    <option value="3">3年生</option>
-                    <option value="4">4年生</option>
-                </select>
-                <button type="submit">新規登録して希望提出へ</button>
-            </form>
-        </section>
+        h1, h3 {
+            font-family: 'Poppins', sans-serif;
+            text-align: center;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        h1 {
+            font-size: 2.5rem;
+        }
+        h3 {
+            font-size: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background-color: var(--input-bg-color);
+            color: var(--text-color);
+            font-size: 1rem;
+            transition: all 0.3s;
+            box-sizing: border-box; /* ★★★大きさを揃えるための設定★★★ */
+        }
+        
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.5);
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+            background-repeat: no-repeat;
+            background-position: right 0.7em top 50%, 0 0;
+            background-size: 0.65em auto, 100%;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.1rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 1rem;
+        }
+
+        button[type="submit"] {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        button[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .admin-link {
+            text-align: center;
+            margin-top: 2rem;
+        }
+        .admin-link a {
+            color: var(--text-color);
+            text-decoration: none;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        .admin-link a:hover {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .login-card {
+                padding: 1.5rem;
+            }
+            h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <article class="login-card">
+            <h1>🌊 逗シフト</h1>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <p style="text-align:center; color: var(--primary-color); background-color: var(--input-bg-color); padding: 0.5rem; border-radius: 8px;">{{ message }}</p>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <div class="grid">
+                <!-- 既存メンバーのログインフォーム -->
+                <section>
+                    <h3>ログイン</h3>
+                    <form action="/login" method="POST">
+                        <label for="member">自分の名前を選択</label>
+                        <select name="member_id" id="member" required>
+                            <option value="">-- ここから選択 --</option>
+                            {% for member in members %}
+                            <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">ログインして希望提出へ</button>
+                    </form>
+                </section>
+
+                <!-- 新規メンバー登録フォーム -->
+                <section>
+                    <h3>初めての方はこちら</h3>
+                    <form action="/register" method="POST">
+                        <!-- ★★★ 学年と名前の順番を入れ替え ★★★ -->
+                        <label for="grade">学年</label>
+                        <select id="grade" name="grade" required>
+                            <option value="" disabled selected>選択してください</option>
+                            <option value="1">1年生</option>
+                            <option value="2">2年生</option>
+                            <option value="3">3年生</option>
+                            <option value="4">4年生</option>
+                        </select>
+
+                        <label for="new_name" style="margin-top: 1rem;">名前</label>
+                        <input type="text" id="new_name" name="name" placeholder="例：逗子 太郎" required>
+                        
+                        <button type="submit">新規登録して進む</button>
+                    </form>
+                </section>
+            </div>
+
+            <div class="admin-link">
+                <a href="/admin">管理者ページへ</a>
+            </div>
+
+        </article>
     </div>
-
-    <hr>
-    <footer>
-        <a href="/admin">管理者ページへ</a>
-    </footer>
-
-</article>
-{% endblock %}
+</body>
+</html>
