@@ -7,17 +7,19 @@
     <!-- Google Fontsからモダンなフォントを読み込み -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
     
     <style>
+        /* === カラーテーマの定義 === */
         :root {
-            --primary-color: #3498db;
-            --secondary-color: #2ecc71;
-            --background-start: #4facfe;
-            --background-end: #00f2fe;
-            --card-background: rgba(255, 255, 255, 0.1);
-            --text-color: #f0f0f0;
-            --input-bg-color: rgba(255, 255, 255, 0.2);
+            --primary-color: #f39c12; /* 夕焼けのようなオレンジ */
+            --background-start: #0f2027; /* 深い紺色 */
+            --background-mid: #203a43;
+            --background-end: #2c5364;   /* 少し明るい紺色 */
+            --card-background: rgba(0, 0, 0, 0.2);
+            --text-color: #ffffff; /* はっきりした白 */
+            --input-bg-color: rgba(255, 255, 255, 0.05);
+            --input-border-color: rgba(255, 255, 255, 0.2);
         }
 
         body, html {
@@ -27,29 +29,32 @@
             height: 100%;
             font-family: 'Noto Sans JP', sans-serif;
             color: var(--text-color);
-            overflow: hidden;
+            overflow: hidden; /* 波のアニメーションがはみ出ないように */
         }
 
         .container {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
             width: 100%;
             height: 100%;
-            background: linear-gradient(45deg, var(--background-start), var(--background-end));
+            background: linear-gradient(45deg, var(--background-start), var(--background-mid), var(--background-end));
+            overflow: hidden;
         }
 
         .login-card {
             background: var(--card-background);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
             border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.18);
             padding: 2.5rem;
             width: 90%;
             max-width: 800px;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
             animation: fadeIn 0.8s ease-out;
+            z-index: 10; /* 波の上に表示 */
         }
 
         @keyframes fadeIn {
@@ -64,17 +69,22 @@
             font-weight: 600;
         }
         h1 {
-            font-size: 2.5rem;
+            font-size: 3rem;
+            text-shadow: 0 3px 6px rgba(0,0,0,0.4);
+            font-weight: 700;
         }
         h3 {
             font-size: 1.5rem;
             margin-top: 1.5rem;
+            border-bottom: 1px solid var(--input-border-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
         }
 
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 2rem;
+            gap: 2.5rem;
             align-items: start;
         }
 
@@ -86,20 +96,20 @@
 
         input[type="text"], select {
             width: 100%;
-            padding: 0.8rem;
+            padding: 1rem;
             border-radius: 8px;
-            border: 1px solid transparent;
+            border: 1px solid var(--input-border-color);
             background-color: var(--input-bg-color);
             color: var(--text-color);
             font-size: 1rem;
             transition: all 0.3s;
-            box-sizing: border-box; /* ★★★大きさを揃えるための設定★★★ */
+            box-sizing: border-box;
         }
         
         input[type="text"]:focus, select:focus {
             outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.5);
+            box-shadow: 0 0 0 3px hsla(39, 83%, 58%, 0.5);
         }
 
         select {
@@ -126,11 +136,13 @@
         button[type="submit"] {
             background-color: var(--primary-color);
             color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
 
         button[type="submit"]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            filter: brightness(1.1);
         }
         
         .admin-link {
@@ -140,21 +152,59 @@
         .admin-link a {
             color: var(--text-color);
             text-decoration: none;
-            opacity: 0.8;
+            opacity: 0.7;
             transition: opacity 0.3s;
         }
         .admin-link a:hover {
             opacity: 1;
         }
+        
+        .ocean { 
+            height: 200px;
+            width: 100%;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .wave {
+            background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/85486/wave.svg) repeat-x; 
+            position: absolute;
+            top: -198px;
+            width: 6400px;
+            height: 198px;
+            animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) infinite;
+            transform: translate3d(0, 0, 0);
+        }
+
+        .wave:nth-of-type(2) {
+            top: -175px;
+            animation: wave 7s cubic-bezier( 0.36, 0.45, 0.63, 0.53) -.125s infinite, swell 7s ease -1.25s infinite;
+            opacity: 1;
+        }
+
+        @keyframes wave {
+            0% { margin-left: 0; }
+            100% { margin-left: -1600px; }
+        }
+
+        @keyframes swell {
+            0%, 100% { transform: translate3d(0,-25px,0); }
+            50% { transform: translate3d(0,5px,0); }
+        }
 
         @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
+            .grid { grid-template-columns: 1fr; }
             .login-card {
                 padding: 1.5rem;
+                background: none;
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+                border: none;
+                box-shadow: none;
             }
-            h1 { font-size: 2rem; }
+            h1 { font-size: 2.5rem; }
         }
     </style>
 </head>
@@ -172,7 +222,6 @@
             {% endwith %}
 
             <div class="grid">
-                <!-- 既存メンバーのログインフォーム -->
                 <section>
                     <h3>ログイン</h3>
                     <form action="/login" method="POST">
@@ -180,19 +229,20 @@
                         <select name="member_id" id="member" required>
                             <option value="">-- ここから選択 --</option>
                             {% for member in members %}
-                            <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年)</option>
+                            <option value="{{ member.id }}">{{ member.name }} ({{ member.grade }}年 / {{ member.position }})</option>
                             {% endfor %}
                         </select>
                         <button type="submit">ログインして希望提出へ</button>
                     </form>
                 </section>
 
-                <!-- 新規メンバー登録フォーム -->
                 <section>
                     <h3>初めての方はこちら</h3>
                     <form action="/register" method="POST">
-                        <!-- ★★★ 学年と名前の順番を入れ替え ★★★ -->
-                        <label for="grade">学年</label>
+                        <label for="new_name">名前</label>
+                        <input type="text" id="new_name" name="name" placeholder="例：逗子 太郎" required>
+                        
+                        <label for="grade" style="margin-top: 1rem;">学年</label>
                         <select id="grade" name="grade" required>
                             <option value="" disabled selected>選択してください</option>
                             <option value="1">1年生</option>
@@ -201,8 +251,19 @@
                             <option value="4">4年生</option>
                         </select>
 
-                        <label for="new_name" style="margin-top: 1rem;">名前</label>
-                        <input type="text" id="new_name" name="name" placeholder="例：逗子 太郎" required>
+                        <label for="position" style="margin-top: 1rem;">役職</label>
+                        <select id="position" name="position" required>
+                            <option value="" disabled selected>選択してください</option>
+                            <option value="監視長">監視長</option>
+                            <option value="副監視長">副監視長</option>
+                            <option value="ガード">ガード</option>
+                            <option value="競技">競技</option>
+                            <option value="ジュニア">ジュニア</option>
+                            <option value="レク">レク</option>
+                            <option value="器材">器材</option>
+                            <option value="事務局">事務局</option>
+                            <option value="その他">その他</option>
+                        </select>
                         
                         <button type="submit">新規登録して進む</button>
                     </form>
@@ -214,6 +275,11 @@
             </div>
 
         </article>
+        
+        <div class="ocean">
+            <div class="wave"></div>
+            <div class="wave"></div>
+        </div>
     </div>
 </body>
 </html>
