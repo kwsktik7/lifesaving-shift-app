@@ -7,6 +7,7 @@ cursor = connection.cursor()
 # --- テーブルを作成するためのSQL文 ---
 
 # メンバー情報を保存するテーブル
+# ★★★ name列にUNIQUE制約を追加し、名前の重複をデータベースレベルで完全に禁止 ★★★
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -23,7 +23,7 @@
         .btn-icon:hover { background-color: rgba(148, 163, 184, 0.2); }
         .btn-icon:active { transform: scale(0.9); }
         .btn-icon svg { width: 24px; height: 24px; }
-        .btn-add svg { stroke: var(--pico-primary); }
+        .btn-add svg { stroke: #fff !important; }
         .btn-remove svg { stroke: #f43f5e; }
     </style>
 {% endblock %}
@@ -35,7 +35,6 @@
     </header>
 
     <div class="grid">
-        <!-- 左側：現在の勤務メンバー -->
         <section>
             <h5>勤務中のメンバー ({{ assigned_members|length }}人)</h5>
             {% if assigned_members %}
@@ -56,7 +55,6 @@
             {% endif %}
         </section>
 
-        <!-- 右側：交代可能なメンバー -->
         <section>
             <h5>交代可能なメンバー ({{ available_members|length }}人)</h5>
             {% if available_members %}

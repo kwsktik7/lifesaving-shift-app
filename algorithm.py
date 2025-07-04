@@ -9,7 +9,7 @@ DB_NAME = 'lifesaving_app.db'
 START_DATE = date(2025, 6, 27)
 END_DATE = date(2025, 8, 31)
 STAFF_REQUIREMENTS = {'weekday': {'min': 8, 'max': 13}, 'holiday': {'min': 23, 'max': 30}}
-PAYMENT_RATIO = {'type_1': 0.8, 'type_V': 0.2}
+PAYMENT_RATIO = {'type_1': 0.7, 'type_V': 0.3}
 LEADERSHIP_POSITIONS = ['監視長', '副監視長']
 
 # --- データ読み込み関数 ---
@@ -66,39 +66,39 @@ def recalculate_and_save_summary():
     with sqlite3.connect(DB_NAME) as connection:
         cursor = connection.cursor()
         
-        shifts_df = pd.read_sql_query("SELECT * FROM shifts", connection)
-        
-        if shifts_df.empty:
+        all_members_df = pd.read_sql_query("SELECT id FROM members WHERE is_active = 1", connection)
+        if all_members_df.empty:
             cursor.execute("DELETE FROM shift_summary")
-            print("シフトデータがないため、集計をクリアしました。")
             connection.commit()
+            print("有効なメンバーがいないため、集計をクリアしました。")
             return
-
-        # 【バグ修正】'pay_type' -> 'payment_type' に修正
-        summary = shifts_df.groupby('member_id')['payment_type'].value_counts().unstack(fill_value=0)
-        summary = summary.rename(columns={'type_1': 'type_1_days', 'type_V': 'type_v_days'})
-
-        if 'type_1_days' not in summary.columns:
-            summary['type_1_days'] = 0
-        if 'type_v_days' not in summary.columns:
-            summary['type_v_days'] = 0
-
-        summary['total_days'] = summary['type_1_days'] + summary['type_v_days']
-        summary['v_ratio'] = (summary['type_v_days'] / summary['total_days'] * 100).where(summary['total_days'] > 0, 0)
+            
+        shifts_df = pd.read_sql_query("SELECT member_id, payment_type FROM shifts", connection)
         
         summary_data_to_save = []
-        all_member_ids_df = pd.read_sql_query("SELECT id FROM members WHERE is_active = 1", connection)
         
-        for member_id in all_member_ids_df['id']:
-            if member_id in summary.index:
-                row = summary.loc[member_id]
-                summary_data_to_save.append((
-                    int(member_id), int(row.get('total_days', 0)),
-                    int(row.get('type_1_days', 0)), int(row.get('type_v_days', 0)),
-                    float(row.get('v_ratio', 0))
-                ))
+        # 全メンバーのIDをループ
+        for member_id in all_members_df['id']:
+            member_shifts = shifts_df[shifts_df['member_id'] == member_id]
+            total_days = len(member_shifts)
+            
+            if total_days == 0:
+                type_1_days = 0
+                type_v_days = 0
+                v_ratio = 0.0
             else:
-                summary_data_to_save.append((int(member_id), 0, 0, 0, 0.0))
+                # pandasを使わずに直接カウントすることで、より安定させる
+                type_1_days = len(member_shifts[member_shifts['payment_type'] == 'type_1'])
+                type_v_days = len(member_shifts[member_shifts['payment_type'] == 'type_V'])
+                v_ratio = (type_v_days / total_days) * 100
+            
+            summary_data_to_save.append((
+                int(member_id),
+                int(total_days),
+                int(type_1_days),
+                int(type_v_days),
+                float(v_ratio)
+            ))
 
         cursor.execute("DELETE FROM shift_summary")
         cursor.executemany("INSERT OR REPLACE INTO shift_summary (member_id, total_days, type_1_days, type_v_days, v_ratio) VALUES (?, ?, ?, ?, ?)", summary_data_to_save)
@@ -128,12 +128,10 @@ def generate_all_shifts():
         type_1_dates = random.sample(work_dates, k=k)
         for d in work_dates:
             pay_type = 'type_1' if d in type_1_dates else 'type_V'
-            # 【バグ修正】'pay_type' -> 'payment_type' に修正
             final_shift_details.append({'member_id': member_id, 'date': d, 'shift_type': 'full_day', 'payment_type': pay_type})
     with sqlite3.connect(DB_NAME) as connection:
         cursor = connection.cursor()
         cursor.execute("DELETE FROM shifts")
-        # 【バグ修正】s['pay_type'] -> s['payment_type'] に修正
         insert_data = [(s['member_id'], s['date'], s['shift_type'], s['payment_type']) for s in final_shift_details]
         cursor.executemany("INSERT INTO shifts (member_id, shift_date, shift_type, payment_type) VALUES (?, ?, ?, ?)", insert_data)
         connection.commit()
