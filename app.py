@@ -4,30 +4,24 @@ import pandas as pd
 from datetime import date, timedelta
 import random
 from functools import wraps
-# algorithm.pyから必要な関数と変数をインポート
 from algorithm import generate_all_shifts, recalculate_and_save_summary, START_DATE, END_DATE
 
 # --- アプリケーションの基本設定 ---
 DB_NAME = 'lifesaving_app.db'
 app = Flask(__name__)
-# セッション管理のための秘密鍵（必ず複雑な文字列に変更してください）
 app.secret_key = 'your-super-secret-key-please-change' 
-# 管理者パスワード
 ADMIN_PASSWORD = 'zushi' 
 
 # --- データベース接続の管理 ---
 def get_db():
-    """リクエストごとにデータベース接続を管理します。"""
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_NAME)
-        # 辞書のように列名でアクセスできるように設定
         db.row_factory = sqlite3.Row
     return db
 
 @app.teardown_appcontext
 def close_connection(exception):
-    """各リクエストの最後に、データベース接続を自動的に閉じます。"""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
@@ -36,7 +30,6 @@ def close_connection(exception):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # sessionに 'admin_logged_in' がなければ、ログインページに強制移動
         if not session.get('admin_logged_in'):
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
@@ -45,7 +38,6 @@ def admin_required(f):
 # --- メンバー関連ページ ---
 @app.route('/')
 def login_page():
-    """アプリの入り口となる、ログイン/新規登録ページを表示します。"""
     cursor = get_db().cursor()
     cursor.execute("SELECT id, name, grade, position FROM members WHERE is_active = 1 ORDER BY grade, name")
     members = cursor.fetchall()
@@ -53,7 +45,6 @@ def login_page():
 
 @app.route('/login', methods=['POST'])
 def login():
-    """既存メンバーのログイン処理"""
     member_id = request.form.get('member_id')
     if not member_id:
         flash("名前を選択してください。", "error")
@@ -62,7 +53,6 @@ def login():
 
 @app.route('/register', methods=['POST'])
 def register():
-    """新規メンバーの登録処理"""
     name = request.form.get('name', '').strip()
     grade = request.form.get('grade')
     position = request.form.get('position')
@@ -89,7 +79,6 @@ def register():
 
 @app.route('/submit/<int:member_id>', methods=['GET', 'POST'])
 def submit_availability(member_id):
-    """希望シフトの一括提出ページ"""
     db = get_db()
     cursor = db.cursor()
 
@@ -139,18 +128,16 @@ def submit_availability(member_id):
 
 @app.route('/success')
 def success_page():
-    """提出完了ページ"""
     return render_template('submit_success.html')
 
 # --- 管理者向けページ ---
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    """管理者ログインページ"""
     if request.method == 'POST':
         if request.form.get('password') == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
-            session.permanent = False # ブラウザを閉じたらセッションが切れる
+            session.permanent = False
             return redirect(url_for('admin_dashboard'))
         else:
             flash('パスワードが違います。', 'error')
@@ -158,7 +145,6 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    """管理者ログアウト処理"""
     session.pop('admin_logged_in', None)
     flash('ログアウトしました。', 'success')
     return redirect(url_for('login_page'))
@@ -166,13 +152,11 @@ def admin_logout():
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
-    """管理者ダッシュボード"""
     return render_template('admin_dashboard.html')
 
 @app.route('/manage-members')
 @admin_required
 def manage_members():
-    """メンバー管理ページ"""
     cursor = get_db().cursor()
     cursor.execute("SELECT id, name, grade, position FROM members WHERE is_active = 1 ORDER BY grade DESC, name ASC")
     members = cursor.fetchall()
@@ -181,13 +165,12 @@ def manage_members():
 @app.route('/delete-member/<int:member_id>', methods=['POST'])
 @admin_required
 def delete_member(member_id):
-    """メンバーの完全削除処理"""
     db = get_db()
     cursor = db.cursor()
     try:
         cursor.execute("DELETE FROM members WHERE id = ?", (member_id,))
         db.commit()
-        recalculate_and_save_summary() # メンバー削除後もレポートを更新
+        recalculate_and_save_summary()
         flash("メンバーを完全に削除しました。", "success")
     except Exception as e:
         db.rollback()
@@ -198,7 +181,6 @@ def delete_member(member_id):
 @app.route('/run-algorithm')
 @admin_required
 def run_algorithm_route():
-    """シフト自動生成の実行"""
     try:
         generate_all_shifts()
         flash("シフトの自動生成が完了しました！", "success")
@@ -206,14 +188,40 @@ def run_algorithm_route():
         flash(f"シフト生成中にエラーが発生しました: {e}", "error")
     return redirect(url_for('schedule'))
 
+# ★★★ この関数を修正 ★★★
 @app.route('/schedule')
 @admin_required
 def schedule():
     """確定シフト表ページ"""
     db = get_db()
     try:
-        query = "SELECT s.shift_date, m.grade, m.position, m.name, s.payment_type, a.availability_type FROM shifts s JOIN members m ON s.member_id = m.id LEFT JOIN availability a ON s.member_id = a.member_id AND s.shift_date = a.shift_date ORDER BY s.shift_date ASC, m.grade DESC, m.position ASC, m.name ASC;"
+        # 役職(position)に優先順位をつけ、それで並び替えるSQL
+        query = """
+        SELECT
+            s.shift_date,
+            m.grade,
+            m.position,
+            m.name,
+            s.payment_type,
+            a.availability_type
+        FROM
+            shifts s
+        JOIN
+            members m ON s.member_id = m.id
+        LEFT JOIN 
+            availability a ON s.member_id = a.member_id AND s.shift_date = a.shift_date
+        ORDER BY
+            s.shift_date ASC,
+            CASE m.position
+                WHEN '監視長' THEN 1
+                WHEN '副監視長' THEN 2
+                ELSE 3
+            END,
+            m.grade DESC,
+            m.name ASC;
+        """
         df = pd.read_sql_query(query, db)
+        
         shifts_list = []
         if not df.empty:
             def format_display_name(row):
@@ -223,6 +231,7 @@ def schedule():
             df['display_name'] = df.apply(format_display_name, axis=1)
             df['payment_type'] = df['payment_type'].replace({'type_1': '1', 'type_V': 'V'})
             shifts_list = df.to_dict(orient='records')
+        
         return render_template('schedule.html', shifts=shifts_list)
     except Exception as e:
         flash(f"エラーが発生しました: {e}", "error")
@@ -231,11 +240,10 @@ def schedule():
 @app.route('/edit-schedule/<shift_date>')
 @admin_required
 def edit_daily_shift(shift_date):
-    """シフト編集ページ"""
     cursor = get_db().cursor()
-    cursor.execute("SELECT m.id, m.name, m.grade, m.position, a.availability_type FROM members m JOIN shifts s ON m.id = s.member_id LEFT JOIN availability a ON m.id = a.member_id AND s.shift_date = a.shift_date WHERE s.shift_date = ? ORDER BY m.grade DESC, m.name ASC", (shift_date,))
+    cursor.execute("SELECT DISTINCT m.id, m.name, m.grade, m.position, a.availability_type FROM members m JOIN shifts s ON m.id = s.member_id LEFT JOIN availability a ON m.id = a.member_id AND s.shift_date = a.shift_date WHERE s.shift_date = ? AND m.is_active = 1 ORDER BY m.grade DESC, m.name ASC", (shift_date,))
     assigned_members_raw = cursor.fetchall()
-    cursor.execute("SELECT m.id, m.name, m.grade, m.position, a.availability_type FROM members m JOIN availability a ON m.id = a.member_id WHERE a.shift_date = ? AND a.availability_type IN ('full_day', 'am_only', 'pm_only') AND m.is_active = 1 ORDER BY m.grade DESC, m.name ASC", (shift_date,))
+    cursor.execute("SELECT DISTINCT m.id, m.name, m.grade, m.position, a.availability_type FROM members m JOIN availability a ON m.id = a.member_id WHERE a.shift_date = ? AND a.availability_type IN ('full_day', 'am_only', 'pm_only') AND m.is_active = 1 ORDER BY m.grade DESC, m.name ASC", (shift_date,))
     all_available_members_raw = cursor.fetchall()
     
     def format_member_list(member_list):
@@ -253,12 +261,14 @@ def edit_daily_shift(shift_date):
     assigned_ids = {m['id'] for m in assigned_members}
     available_members = [m for m in all_available_members if m['id'] not in assigned_ids]
 
-    return render_template('edit_schedule.html', shift_date=shift_date, assigned_members=assigned_members, available_members=available_members)
+    return render_template('edit_schedule.html', 
+                           shift_date=shift_date, 
+                           assigned_members=assigned_members, 
+                           available_members=available_members)
 
 @app.route('/add-to-shift/<shift_date>/<int:member_id>', methods=['POST'])
 @admin_required
 def add_to_shift(shift_date, member_id):
-    """メンバーをシフトに追加し、レポートを再集計する"""
     db = get_db()
     pay_type = random.choice(['type_1', 'type_V'])
     db.execute("INSERT INTO shifts (shift_date, member_id, shift_type, payment_type) VALUES (?, ?, ?, ?)",
@@ -270,7 +280,6 @@ def add_to_shift(shift_date, member_id):
 @app.route('/remove-from-shift/<shift_date>/<int:member_id>', methods=['POST'])
 @admin_required
 def remove_from_shift(shift_date, member_id):
-    """メンバーをシフトから削除し、レポートを再集計する"""
     db = get_db()
     db.execute("DELETE FROM shifts WHERE shift_date = ? AND member_id = ?", (shift_date, member_id))
     db.commit()
@@ -280,7 +289,6 @@ def remove_from_shift(shift_date, member_id):
 @app.route('/summary')
 @admin_required
 def summary_page():
-    """事務レポートページ"""
     db = get_db()
     try:
         query = "SELECT m.name, m.position, s.total_days, s.type_1_days, s.type_v_days, s.v_ratio FROM shift_summary s JOIN members m ON s.member_id = m.id ORDER BY s.total_days DESC, m.name ASC;"
