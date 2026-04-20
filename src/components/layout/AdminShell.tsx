@@ -2,14 +2,13 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { firebaseSignOut } from '@/utils/auth';
 import {
   LayoutDashboard, CalendarDays, Users,
-  Settings, LogOut, CheckSquare, Calendar, Send, Coins
+  Settings, LogOut, CheckSquare, Send, Coins
 } from 'lucide-react';
 
 const nav = [
   { to: '/admin', label: 'ダッシュボード', icon: LayoutDashboard, end: true },
   { to: '/admin/availability', label: '可否一覧', icon: Users },
   { to: '/admin/shift/edit', label: 'シフト作成', icon: CalendarDays },
-  { to: '/admin/shift/calendar', label: 'シフト表（管理）', icon: Calendar },
   { to: '/admin/shift/publish', label: 'シフト発行', icon: Send },
   { to: '/admin/pay', label: '給与配分', icon: Coins },
   { to: '/admin/attendance', label: '勤怠入力', icon: CheckSquare },
@@ -32,7 +31,7 @@ export default function AdminShell() {
           <div className="flex items-center gap-2">
             <span className="text-2xl">🏄</span>
             <div>
-              <p className="text-xs font-bold text-gray-800 leading-tight">逗子LSC</p>
+              <p className="text-xs font-bold text-gray-800 leading-tight">逗子SLSC</p>
               <p className="text-xs text-gray-400">管理者</p>
             </div>
           </div>

@@ -8,6 +8,8 @@ interface StudentState {
   students: Student[];
   _ready: boolean;
   addStudent: (s: Omit<Student, 'id' | 'pinHash'> & { pin: string; grade?: string; role?: string; hasPwc?: boolean; isLeader?: boolean }) => void;
+  /** 本人セルフサインアップ用: id を明示指定して作成（Firestoreルールで studentId == auth.uid を要求） */
+  createAccount: (data: Omit<Student, 'pinHash'> & { pin: string }) => Promise<void>;
   updateStudent: (id: string, patch: Partial<Omit<Student, 'id' | 'pinHash'>>) => void;
   updateStudentPin: (id: string, pin: string) => void;
   deactivateStudent: (id: string) => void;
@@ -41,6 +43,16 @@ export const useStudentStore = isFirebaseConfigured
           set((state) => ({ students: [...state.students, student] }));
           const { id: _, ...docData } = student;
           await firestoreSet(COLLECTION, id, docData);
+        },
+        createAccount: async ({ pin, id, ...data }) => {
+          const student: Student = {
+            ...data,
+            id,
+            pinHash: hashPin(pin),
+          };
+          const { id: _, ...docData } = student;
+          await firestoreSet(COLLECTION, id, docData);
+          // 楽観更新はスキップ(subscribeCollectionで反映される)
         },
         updateStudent: async (id, patch) => {
           set((state) => ({
@@ -87,6 +99,11 @@ export const useStudentStore = isFirebaseConfigured
                 },
               ],
             })),
+          createAccount: async ({ pin, ...data }) => {
+            set((state) => ({
+              students: [...state.students, { ...data, pinHash: hashPin(pin) } as Student],
+            }));
+          },
           updateStudent: (id, patch) =>
             set((state) => ({
               students: state.students.map((s) => (s.id === id ? { ...s, ...patch } : s)),

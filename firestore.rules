@@ -22,10 +22,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // 学生: 全員読み取り可、管理者のみ書き込み
+    // 学生: 全員読み取り可、セルフサインアップ可(doc id == auth.uid)、更新削除は管理者のみ
     match /students/{studentId} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow create: if (request.auth != null && studentId == request.auth.uid) || isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // 可否: 全員読み取り可、本人or管理者が書き込み

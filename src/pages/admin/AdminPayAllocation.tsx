@@ -51,6 +51,12 @@ function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPa
   return { fullSlots, vSlots, surplus: budget - actualPay };
 }
 
+/** 1年生は最初の3回の勤務をVで固定 */
+const ROOKIE_V_SHIFT_QUOTA = 3;
+function isRookie(grade: string): boolean {
+  return /1年/.test(grade);
+}
+
 /** 最大剰余法で1日数を各学生に配分 */
 function distributeFullDays(
   studentDays: { studentId: string; days: number }[],
@@ -82,14 +88,15 @@ function distributeFullDays(
 export default function AdminPayAllocation() {
   const { days } = useSeasonStore();
   const { students } = useStudentStore();
-  const { shifts, updateShiftPayType } = useShiftStore();
-  const { settings } = useSettingsStore();
+  const { shifts, setShiftPayTypesBulk } = useShiftStore();
+  const { settings, updateSettings } = useSettingsStore();
 
   const months = useMemo(
     () => getMonthRanges(settings.seasonStart, settings.seasonEnd),
     [settings.seasonStart, settings.seasonEnd]
   );
   const [selectedMonth, setSelectedMonth] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
   const month = months[selectedMonth];
 
   const activeStudents = students.filter((s) => s.isActive);
@@ -104,13 +111,44 @@ export default function AdminPayAllocation() {
     return shiftList.reduce((acc, s) => acc + ((s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1), 0);
   }
 
+  /**
+   * 1年生ごとに当月の強制Vシフト数（と延べ人日）を算出。
+   * シーズン開始から当月前までに出勤確定した回数を差し引き、残り枠を当月の出勤分から時系列順で消費する。
+   */
+  function calcRookieForcedV(
+    studentId: string,
+    monthStart: string,
+    monthEnd: string,
+  ): { shiftIds: string[]; effectiveDays: number } {
+    const priorCount = shifts.filter(
+      (s) => s.studentId === studentId && s.status === 'attended' && s.date < monthStart,
+    ).length;
+    const quota = Math.max(0, ROOKIE_V_SHIFT_QUOTA - priorCount);
+    if (quota === 0) return { shiftIds: [], effectiveDays: 0 };
+    const thisMonth = shifts
+      .filter(
+        (s) =>
+          s.studentId === studentId &&
+          s.status === 'attended' &&
+          s.date >= monthStart &&
+          s.date <= monthEnd,
+      )
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const forced = thisMonth.slice(0, quota);
+    const effectiveDays = forced.reduce(
+      (acc, s) => acc + ((s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1),
+      0,
+    );
+    return { shiftIds: forced.map((s) => s.id), effectiveDays };
+  }
+
   // 全月の余剰を計算（繰越用）
   const allMonthSurplus = useMemo(() => {
     const surplusMap = new Map<number, number>(); // monthIndex -> surplus
     for (let i = 0; i < months.length; i++) {
       const m = months[i];
-      const mDays = days.filter((d) => d.isOpen && d.date >= m.startDate && d.date <= m.endDate);
-      const baseBudget = mDays.reduce((acc, d) => acc + d.cityMinimum * settings.fullPayAmount, 0);
+      const monthKey = `${m.year}-${String(m.month + 1).padStart(2, '0')}`;
+      const baseBudget = settings.monthlyBudgets?.[monthKey] ?? 0;
       const carryover = i > 0 ? (surplusMap.get(i - 1) ?? 0) : 0;
       const totalBudget = baseBudget + carryover;
 
@@ -118,8 +156,18 @@ export default function AdminPayAllocation() {
         (s) => s.date >= m.startDate && s.date <= m.endDate && s.status === 'attended'
       );
       const personDays = calcEffectiveDays(attended);
+
+      // 1年生の強制V分を控除
+      let forcedVEffectiveDays = 0;
+      for (const st of activeStudents) {
+        if (!isRookie(st.grade)) continue;
+        forcedVEffectiveDays += calcRookieForcedV(st.id, m.startDate, m.endDate).effectiveDays;
+      }
+      const eligibleDays = personDays - forcedVEffectiveDays;
+      const eligibleBudget = totalBudget - forcedVEffectiveDays * settings.vPayAmount;
+
       const isLastMonth = i === months.length - 1;
-      const calc = tsurukame(totalBudget, personDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
+      const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
       surplusMap.set(i, calc.surplus);
     }
     return surplusMap;
@@ -129,7 +177,8 @@ export default function AdminPayAllocation() {
     if (!month) return null;
 
     const monthDays = days.filter((d) => d.isOpen && d.date >= month.startDate && d.date <= month.endDate);
-    const baseBudget = monthDays.reduce((acc, d) => acc + d.cityMinimum * settings.fullPayAmount, 0);
+    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
+    const baseBudget = settings.monthlyBudgets?.[monthKey] ?? 0;
     const carryover = selectedMonth > 0 ? (allMonthSurplus.get(selectedMonth - 1) ?? 0) : 0;
     const budget = baseBudget + carryover;
 
@@ -146,8 +195,6 @@ export default function AdminPayAllocation() {
 
     // 半日勤務を考慮した延べ人日（0.5換算）
     const effectivePersonDays = calcEffectiveDays(attendedShifts);
-    const isLastMonth = selectedMonth === months.length - 1;
-    const calc = tsurukame(budget, effectivePersonDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
 
     // 学生ごとの出勤日数（半日は0.5）
     const studentDaysMap = new Map<string, number>();
@@ -156,22 +203,56 @@ export default function AdminPayAllocation() {
       studentDaysMap.set(s.studentId, (studentDaysMap.get(s.studentId) ?? 0) + val);
     }
 
+    // 1年生の強制V（最初3回の勤務はVで固定）
+    const rookieForcedVByStudent = new Map<string, { shiftIds: string[]; effectiveDays: number }>();
+    let totalRookieForcedVDays = 0;
+    const forcedVShiftIds = new Set<string>();
+    for (const st of activeStudents) {
+      if (!isRookie(st.grade)) continue;
+      const forced = calcRookieForcedV(st.id, month.startDate, month.endDate);
+      if (forced.effectiveDays > 0) {
+        rookieForcedVByStudent.set(st.id, forced);
+        totalRookieForcedVDays += forced.effectiveDays;
+        forced.shiftIds.forEach((id) => forcedVShiftIds.add(id));
+      }
+    }
+
+    // 配分対象の延べ人日と予算（強制Vを除外）
+    const eligibleDays = effectivePersonDays - totalRookieForcedVDays;
+    const eligibleBudget = budget - totalRookieForcedVDays * settings.vPayAmount;
+    const isLastMonth = selectedMonth === months.length - 1;
+    const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
+
+    // 各学生の配分対象日数（総日数 - 強制V日数）
     const studentDays = activeStudents
       .filter((s) => studentDaysMap.has(s.id))
-      .map((s) => ({ studentId: s.id, days: studentDaysMap.get(s.id) ?? 0 }));
+      .map((s) => {
+        const totalDays = studentDaysMap.get(s.id) ?? 0;
+        const forcedV = rookieForcedVByStudent.get(s.id)?.effectiveDays ?? 0;
+        return { studentId: s.id, days: Math.max(0, totalDays - forcedV) };
+      });
 
     const fullDaysMap = distributeFullDays(studentDays, calc.fullSlots);
 
-    const studentAllocations = studentDays.map((sd) => {
-      const student = activeStudents.find((s) => s.id === sd.studentId)!;
-      const fullDays = fullDaysMap.get(sd.studentId) ?? 0;
-      const vDays = sd.days - fullDays;
-      const pay = fullDays * settings.fullPayAmount + vDays * settings.vPayAmount;
-      const ratio = sd.days > 0 ? fullDays / sd.days : 0;
-      return { student, totalDays: sd.days, fullDays, vDays, pay, ratio };
-    }).sort((a, b) => b.totalDays - a.totalDays);
+    const studentAllocations = activeStudents
+      .filter((s) => studentDaysMap.has(s.id))
+      .map((s) => {
+        const totalDays = studentDaysMap.get(s.id) ?? 0;
+        const forcedVDays = rookieForcedVByStudent.get(s.id)?.effectiveDays ?? 0;
+        const fullDays = fullDaysMap.get(s.id) ?? 0;
+        const vDays = totalDays - fullDays;
+        const pay = fullDays * settings.fullPayAmount + vDays * settings.vPayAmount;
+        const ratio = totalDays > 0 ? fullDays / totalDays : 0;
+        return { student: s, totalDays, fullDays, vDays, forcedVDays, pay, ratio };
+      })
+      .sort((a, b) => b.totalDays - a.totalDays);
 
-    const hasAllocation = attendedShifts.some((s) => s.payType === '1');
+    // 合計補正後（表示用の合計枠数）
+    const totalFullSlots = calc.fullSlots;
+    const totalVSlots = calc.vSlots + totalRookieForcedVDays;
+
+    // 配分確定状態は明示フラグで管理（fullSlots=0でも確定として扱える）
+    const hasAllocation = (settings.allocatedMonths ?? []).includes(monthKey);
 
     return {
       monthDays,
@@ -182,15 +263,22 @@ export default function AdminPayAllocation() {
       effectivePersonDays,
       pendingShifts,
       ...calc,
+      fullSlots: totalFullSlots,
+      vSlots: totalVSlots,
       studentAllocations,
       attendedShifts,
       fullDaysMap,
+      forcedVShiftIds,
+      rookieForcedVByStudent,
+      totalRookieForcedVDays,
       hasAllocation,
     };
   }, [month, days, shifts, students, settings, activeStudents, selectedMonth, allMonthSurplus]);
 
-  function handleAllocate() {
+  async function handleAllocate() {
     if (!monthData || !month) return;
+    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
+    const updates: { id: string; payType: 'V' | '1' }[] = [];
     for (const alloc of monthData.studentAllocations) {
       const studentShifts = monthData.attendedShifts
         .filter((s) => s.studentId === alloc.student.id)
@@ -198,20 +286,48 @@ export default function AdminPayAllocation() {
 
       let fullRemaining = alloc.fullDays;
       for (const shift of studentShifts) {
+        // 1年生の最初3回の勤務は強制V
+        if (monthData.forcedVShiftIds.has(shift.id)) {
+          updates.push({ id: shift.id, payType: 'V' });
+          continue;
+        }
         if (fullRemaining > 0) {
-          updateShiftPayType(shift.id, '1');
+          updates.push({ id: shift.id, payType: '1' });
           fullRemaining--;
         } else {
-          updateShiftPayType(shift.id, 'V');
+          updates.push({ id: shift.id, payType: 'V' });
         }
       }
     }
+    try {
+      await setShiftPayTypesBulk(updates);
+      const current = settings.allocatedMonths ?? [];
+      if (!current.includes(monthKey)) {
+        await updateSettings({ allocatedMonths: [...current, monthKey] });
+      }
+      setErrorMsg('');
+    } catch (e) {
+      console.error('[PayAllocation] allocate failed', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`配分の保存に失敗しました: ${msg}`);
+    }
   }
 
-  function handleReset() {
+  async function handleReset() {
     if (!monthData || !month) return;
-    for (const shift of monthData.attendedShifts) {
-      updateShiftPayType(shift.id, 'V');
+    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
+    const updates = monthData.attendedShifts.map((s) => ({ id: s.id, payType: 'V' as const }));
+    try {
+      await setShiftPayTypesBulk(updates);
+      const current = settings.allocatedMonths ?? [];
+      if (current.includes(monthKey)) {
+        await updateSettings({ allocatedMonths: current.filter((k) => k !== monthKey) });
+      }
+      setErrorMsg('');
+    } catch (e) {
+      console.error('[PayAllocation] reset failed', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`取り消しに失敗しました: ${msg}`);
     }
   }
 
@@ -222,7 +338,7 @@ export default function AdminPayAllocation() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">給与配分</h1>
-          <p className="text-xs text-gray-400">勤怠入力で出勤確定した実績をもとに、月ごとの1/Vを鶴亀算で計算し均等配分します。</p>
+          <p className="text-xs text-gray-400">設定ページの月別予算と勤怠実績をもとに、月ごとの1/Vを鶴亀算で計算し均等配分します。</p>
         </div>
         <button
           onClick={handleExport}
@@ -293,6 +409,23 @@ export default function AdminPayAllocation() {
           )}
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* Missing budget warning */}
+      {monthData.baseBudget === 0 && (
+        <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-center gap-3">
+          <span className="text-red-600 text-lg">⚠</span>
+          <div>
+            <p className="text-sm font-medium text-red-800">{month.label}の予算が未設定です</p>
+            <p className="text-xs text-red-600">設定ページの「月別予算」で金額を入力してください。</p>
+          </div>
+        </div>
+      )}
 
       {/* Pending attendance warning */}
       {monthData.pendingShifts > 0 && (

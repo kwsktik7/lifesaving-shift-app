@@ -1,21 +1,58 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { collection, getDocs } from 'firebase/firestore';
 import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { firebaseSignIn, verifyPin } from '@/utils/auth';
+import { firebaseSignIn, verifyPin, ensureAnonAuth } from '@/utils/auth';
+import { db } from '@/lib/firebase';
+
+/** 名前の表記揺れ吸収: 全角/半角スペース除去 */
+function normalizeName(s: string): string {
+  return s.replace(/[\s\u3000]/g, '');
+}
+
+type StudentMode = 'login' | 'signup';
+
+const GRADE_OPTIONS = ['1年', '2年', '3年', '4年'];
+const LEADER_OPTIONS = [
+  { value: '', label: '（なし）' },
+  { value: '監視長', label: '監視長' },
+  { value: '副監視長', label: '副監視長' },
+];
 
 export default function LoginPage() {
   const [tab, setTab] = useState<'admin' | 'student'>('student');
+  const [studentMode, setStudentMode] = useState<StudentMode>('login');
   const [adminPass, setAdminPass] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
 
-  const { students } = useStudentStore();
-  const { settings, verifyAdminPassword, setAdminPassword } = useSettingsStore();
+  // 新規アカウント作成フォーム
+  const [signupName, setSignupName] = useState('');
+  const [signupGrade, setSignupGrade] = useState('1年');
+  const [signupHasPwc, setSignupHasPwc] = useState(false);
+  const [signupLeader, setSignupLeader] = useState('');
+  const [signupLeaderPass, setSignupLeaderPass] = useState('');
+  const [signupMonth, setSignupMonth] = useState('');
+  const [signupDay, setSignupDay] = useState('');
+
+  const { students, createAccount } = useStudentStore();
+  const { settings, verifyAdminPassword, setAdminPassword, verifyLeaderPassword } = useSettingsStore();
   const navigate = useNavigate();
 
-  const activeStudents = students.filter((s) => s.isActive);
+  const activeStudents = students
+    .filter((s) => s.isActive)
+    .sort((a, b) => {
+      // 学年の数字を抽出してソート（数字が大きい=上級生を先に）
+      const gradeNum = (g: string) => {
+        const m = g.match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+      };
+      const diff = gradeNum(b.grade) - gradeNum(a.grade);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name, 'ja');
+    });
 
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +73,75 @@ export default function LoginPage() {
       } else {
         setError('パスワードが違います');
       }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSignup(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    const name = signupName.trim();
+    if (!name) { setError('名前を入力してください'); return; }
+    const m = Number(signupMonth);
+    const d = Number(signupDay);
+    if (!Number.isInteger(m) || m < 1 || m > 12) { setError('誕生月は1〜12で入力してください'); return; }
+    if (!Number.isInteger(d) || d < 1 || d > 31) { setError('誕生日は1〜31で入力してください'); return; }
+    const pinStr = String(m).padStart(2, '0') + String(d).padStart(2, '0');
+
+    // 監視長/副監視長を選択した場合はパスワード検証
+    if (signupLeader === '監視長' || signupLeader === '副監視長') {
+      if (!signupLeaderPass) {
+        setError('監視長パスワードを入力してください');
+        return;
+      }
+      if (!verifyLeaderPassword(signupLeaderPass)) {
+        setError('監視長パスワードが違います');
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      const uid = await ensureAnonAuth();
+      if (!uid) {
+        setError('認証の初期化に失敗しました');
+        return;
+      }
+      // 重複チェック: 名前(スペース除去) + 誕生日MMDD
+      if (db) {
+        const normalized = normalizeName(name);
+        const snap = await getDocs(collection(db, 'students'));
+        const dup = snap.docs.find((d) => {
+          const data = d.data() as { name?: string; birthday?: string };
+          return normalizeName(data.name ?? '') === normalized && data.birthday === pinStr;
+        });
+        if (dup) {
+          setError('同じ名前・誕生日のアカウントが既に存在します。ログインしてください。');
+          return;
+        }
+      }
+      const role = signupLeader || 'ガード';
+      const isLeader = signupLeader === '監視長' || signupLeader === '副監視長';
+      await createAccount({
+        id: uid,
+        name,
+        nameKana: '',
+        pin: pinStr,
+        isActive: true,
+        joinYear: new Date().getFullYear(),
+        grade: signupGrade,
+        role,
+        hasPwc: signupHasPwc,
+        isLeader,
+        birthday: pinStr,
+      });
+      await firebaseSignIn({ role: 'student', studentId: uid, studentName: name });
+      navigate('/student');
+    } catch (err) {
+      console.error('[signup] failed', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`アカウント作成に失敗しました: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -92,41 +198,155 @@ export default function LoginPage() {
         </div>
 
         {tab === 'student' ? (
-          <form onSubmit={handleStudentLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">名前を選択</label>
-              <select
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={selectedStudent}
-                onChange={(e) => setSelectedStudent(e.target.value)}
+          studentMode === 'login' ? (
+            <form onSubmit={handleStudentLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">名前を選択</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedStudent}
+                  onChange={(e) => setSelectedStudent(e.target.value)}
+                >
+                  <option value="">-- 選択してください --</option>
+                  {activeStudents.map((s) => (
+                    <option key={s.id} value={s.id}>{s.grade} {s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">PIN（4桁／誕生日 月日）</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="0101"
+                />
+              </div>
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                <option value="">-- 選択してください --</option>
-                {activeStudents.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">PIN（4桁）</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="0000"
-              />
-            </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {loading ? 'ログイン中...' : 'ログイン'}
-            </button>
-          </form>
+                {loading ? 'ログイン中...' : 'ログイン'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStudentMode('signup'); setError(''); }}
+                className="w-full text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                新規アカウント作成
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSignup} className="space-y-4">
+              <p className="text-xs text-gray-500 bg-blue-50 rounded-lg p-2">
+                PINは誕生日の月日(4桁)になります。例: 1月1日 → 0101
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">氏名</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={signupName}
+                  onChange={(e) => setSignupName(e.target.value)}
+                  placeholder="山田 太郎"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">学年</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={signupGrade}
+                  onChange={(e) => setSignupGrade(e.target.value)}
+                >
+                  {GRADE_OPTIONS.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">PWC免許</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={signupHasPwc ? 'yes' : 'no'}
+                  onChange={(e) => setSignupHasPwc(e.target.value === 'yes')}
+                >
+                  <option value="no">持っていない</option>
+                  <option value="yes">持っている</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">役職（該当者のみ）</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  value={signupLeader}
+                  onChange={(e) => { setSignupLeader(e.target.value); setSignupLeaderPass(''); setError(''); }}
+                >
+                  {LEADER_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {(signupLeader === '監視長' || signupLeader === '副監視長') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">監視長パスワード</label>
+                  <input
+                    type="password"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={signupLeaderPass}
+                    onChange={(e) => setSignupLeaderPass(e.target.value)}
+                    placeholder="管理者から共有されたパスワード"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">誕生日（PINになります）</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={12}
+                    placeholder="月"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={signupMonth}
+                    onChange={(e) => setSignupMonth(e.target.value)}
+                  />
+                  <span className="text-gray-500 text-sm">月</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={31}
+                    placeholder="日"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={signupDay}
+                    onChange={(e) => setSignupDay(e.target.value)}
+                  />
+                  <span className="text-gray-500 text-sm">日</span>
+                </div>
+              </div>
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {loading ? '作成中...' : 'アカウントを作成してログイン'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStudentMode('login'); setError(''); }}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                ログインに戻る
+              </button>
+            </form>
+          )
         ) : (
           <form onSubmit={handleAdminLogin} className="space-y-4">
             {!settings.adminPasswordHash && (

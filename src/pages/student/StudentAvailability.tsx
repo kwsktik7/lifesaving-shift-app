@@ -1,10 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { getSession } from '@/utils/auth';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Check, Pencil, CheckSquare, Square, ChevronDown } from 'lucide-react';
+import { Check, Pencil, CheckSquare, Square, ChevronDown, Lock } from 'lucide-react';
 import type { AvailabilityStatus } from '@/types';
 
 const STATUS_OPTIONS: { value: AvailabilityStatus | 'clear'; label: string; color: string }[] = [
@@ -26,11 +27,14 @@ export default function StudentAvailability() {
 
   const { days } = useSeasonStore();
   const { availabilities, setBulk } = useAvailabilityStore();
+  const { settings } = useSettingsStore();
 
+  const locked = !!settings.availabilityLocked;
   const openDays = days.filter((d) => d.isOpen);
 
   const hasSubmitted = availabilities.some((a) => a.studentId === studentId);
-  const [editing, setEditing] = useState(!hasSubmitted);
+  // ロック中は常に閲覧モード
+  const [editing, setEditing] = useState(!hasSubmitted && !locked);
 
   // localAvail: date → { status, note }
   const [localAvail, setLocalAvail] = useState<Map<string, { status: AvailabilityStatus; note: string }>>(() => {
@@ -126,6 +130,7 @@ export default function StudentAvailability() {
   }, []);
 
   function handleSave() {
+    if (locked) return;
     const entries = openDays
       .filter((d) => localAvail.has(d.date))
       .map((d) => {
@@ -232,35 +237,51 @@ export default function StudentAvailability() {
     );
   }
 
-  // 確認画面（閲覧モード）
-  if (!editing) {
+  // 確認画面（閲覧モード）: ロック中も必ずここに来る
+  if (!editing || locked) {
     return (
       <div className="p-4">
         <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-800">可否提出</h1>
         </div>
 
-        <div className="bg-green-50 border border-green-300 rounded-xl p-4 mb-5 flex items-center gap-3">
-          <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-            <Check size={18} className="text-white" />
+        {locked && (
+          <div className="bg-red-50 border border-red-300 rounded-xl p-4 mb-3 flex items-center gap-3">
+            <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <Lock size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-red-800">シフト提出は締め切られました</p>
+              <p className="text-xs text-red-600">変更したい場合は管理者に連絡してください。</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-bold text-green-800">提出済みです</p>
-            <p className="text-xs text-green-600">
-              ○ {availableCount}日 / × {unavailableCount}日{undecidedCount > 0 ? ` / 未定 ${undecidedCount}日` : ''} / 全{submittedCount}日入力済み
-            </p>
-          </div>
-        </div>
+        )}
 
-        <div className="mb-5">
-          <button
-            onClick={() => setEditing(true)}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            <Pencil size={16} />
-            変更する
-          </button>
-        </div>
+        {hasSubmitted && (
+          <div className="bg-green-50 border border-green-300 rounded-xl p-4 mb-5 flex items-center gap-3">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <Check size={18} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-green-800">提出済みです</p>
+              <p className="text-xs text-green-600">
+                ○ {availableCount}日 / × {unavailableCount}日{undecidedCount > 0 ? ` / 未定 ${undecidedCount}日` : ''} / 全{submittedCount}日入力済み
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!locked && (
+          <div className="mb-5">
+            <button
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              <Pencil size={16} />
+              変更する
+            </button>
+          </div>
+        )}
 
         <Legend />
 

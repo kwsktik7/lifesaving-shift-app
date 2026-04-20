@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { Lock, Unlock } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { AvailabilityStatus, Availability } from '@/types';
@@ -35,7 +37,44 @@ export default function AdminAvailability() {
   const { days } = useSeasonStore();
   const { students } = useStudentStore();
   const { availabilities } = useAvailabilityStore();
+  const { settings, updateSettings, verifyAdminPassword } = useSettingsStore();
   const [view, setView] = useState<'by-date' | 'by-student'>('by-date');
+
+  // ロック切り替えモーダル
+  const [lockModalOpen, setLockModalOpen] = useState(false);
+  const [lockPw, setLockPw] = useState('');
+  const [lockErr, setLockErr] = useState('');
+  const [lockSaving, setLockSaving] = useState(false);
+
+  const locked = !!settings.availabilityLocked;
+
+  function openLockModal() {
+    setLockPw('');
+    setLockErr('');
+    setLockModalOpen(true);
+  }
+  function closeLockModal() {
+    setLockModalOpen(false);
+    setLockPw('');
+    setLockErr('');
+    setLockSaving(false);
+  }
+  async function confirmLockToggle() {
+    if (!verifyAdminPassword(lockPw)) {
+      setLockErr('管理者パスワードが違います');
+      return;
+    }
+    setLockSaving(true);
+    setLockErr('');
+    try {
+      await updateSettings({ availabilityLocked: !locked });
+      closeLockModal();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLockErr(`保存に失敗しました: ${msg}`);
+      setLockSaving(false);
+    }
+  }
 
   const activeStudents = students.filter((s) => s.isActive);
 
@@ -53,17 +92,36 @@ export default function AdminAvailability() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">可否一覧</h1>
-        <div className="flex rounded-lg overflow-hidden border border-gray-200">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-gray-800">可否一覧</h1>
+          {locked && (
+            <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">
+              <Lock size={12} /> 提出締め切り済み
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
           <button
-            className={`px-4 py-2 text-sm font-medium ${view === 'by-date' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
-            onClick={() => setView('by-date')}
-          >日別</button>
-          <button
-            className={`px-4 py-2 text-sm font-medium ${view === 'by-student' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
-            onClick={() => setView('by-student')}
-          >学生別</button>
+            onClick={openLockModal}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              locked
+                ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                : 'bg-red-600 text-white hover:bg-red-700'
+            }`}
+          >
+            {locked ? <><Unlock size={14} /> 提出を再開する</> : <><Lock size={14} /> 提出を締め切る</>}
+          </button>
+          <div className="flex rounded-lg overflow-hidden border border-gray-200">
+            <button
+              className={`px-4 py-2 text-sm font-medium ${view === 'by-date' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+              onClick={() => setView('by-date')}
+            >日別</button>
+            <button
+              className={`px-4 py-2 text-sm font-medium ${view === 'by-student' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+              onClick={() => setView('by-student')}
+            >学生別</button>
+          </div>
         </div>
       </div>
 
@@ -81,12 +139,57 @@ export default function AdminAvailability() {
       ) : (
         <ByStudentView openDays={openDays} students={activeStudents} availMap={availMap} />
       )}
+
+      {/* Lock toggle modal */}
+      {lockModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-base font-semibold text-gray-800 mb-2 flex items-center gap-2">
+              {locked ? <><Unlock size={18} /> シフト提出を再開</> : <><Lock size={18} /> シフト提出を締め切る</>}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {locked
+                ? '再開すると学生が再度シフトを変更できるようになります。'
+                : '締め切ると学生は提出済みのシフトを閲覧できますが、変更できなくなります。'}
+              <br />管理者パスワードを入力してください。
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="管理者パスワード"
+              value={lockPw}
+              onChange={(e) => { setLockPw(e.target.value); setLockErr(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmLockToggle(); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+            />
+            {lockErr && <p className="text-red-500 text-xs mb-2">{lockErr}</p>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={closeLockModal}
+                disabled={lockSaving}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={confirmLockToggle}
+                disabled={lockSaving || !lockPw}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 ${
+                  locked ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {lockSaving ? '保存中...' : (locked ? '再開する' : '締め切る')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function ByDateView({ openDays, students, availMap }: {
-  openDays: { date: string; cityMinimum: number; actualSlots: number }[];
+  openDays: { date: string }[];
   students: { id: string; name: string; isLeader?: boolean; hasPwc?: boolean; grade?: string }[];
   availMap: Map<string, Map<string, Availability>>;
 }) {
@@ -140,9 +243,6 @@ function ByDateView({ openDays, students, availMap }: {
                 {format(parseISO(day.date), 'M月d日(E)', { locale: ja })}
               </h3>
               <div className="flex gap-2 text-xs">
-                <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                  ミニマム {day.cityMinimum}名
-                </span>
                 <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
                   ○ {yesStudents.length}名
                 </span>

@@ -121,10 +121,7 @@ export function exportShiftSchedulePdf(
     const c = shifts.filter(
       (s) => s.date === d.date && s.status !== 'cancelled' && s.status !== 'draft'
     ).length;
-    const dayData = seasonDays.find((sd) => sd.date === d.date);
-    const isShort = dayData && c < dayData.cityMinimum;
-    const style = isShort ? 'color:#dc2626;font-weight:bold;' : 'font-weight:600;';
-    return `<td style="border:1px solid #e5e7eb;text-align:center;font-size:9px;padding:2px;background:#f9fafb;${style}">${c || ''}</td>`;
+    return `<td style="border:1px solid #e5e7eb;text-align:center;font-size:9px;padding:2px;background:#f9fafb;font-weight:600;">${c || ''}</td>`;
   }).join('');
 
   const html = `<!DOCTYPE html>

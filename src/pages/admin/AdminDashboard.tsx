@@ -11,7 +11,7 @@ import { Users, CalendarDays, Coins, AlertCircle } from 'lucide-react';
 function getMonthRanges(seasonStart: string, seasonEnd: string) {
   const start = parseISO(seasonStart);
   const end = parseISO(seasonEnd);
-  const months: { label: string; startDate: string; endDate: string }[] = [];
+  const months: { label: string; key: string; startDate: string; endDate: string }[] = [];
   let cur = new Date(start.getFullYear(), start.getMonth(), 1);
   while (cur <= end) {
     const y = cur.getFullYear();
@@ -20,6 +20,7 @@ function getMonthRanges(seasonStart: string, seasonEnd: string) {
     const monthEnd = new Date(y, m + 1, 0);
     months.push({
       label: `${m + 1}月`,
+      key: `${y}-${String(m + 1).padStart(2, '0')}`,
       startDate: monthStart < start ? seasonStart : format(monthStart, 'yyyy-MM-dd'),
       endDate: monthEnd > end ? seasonEnd : format(monthEnd, 'yyyy-MM-dd'),
     });
@@ -40,8 +41,12 @@ export default function AdminDashboard() {
     const publishedShifts = shifts.filter((s) => s.status === 'published' || s.status === 'attended').length;
     const summaries = getSummaries();
     const totalPay = summaries.reduce((acc, s) => acc + s.totalPay, 0);
-    // 市役所予算総額 = Σ(ミニマム × 9100)
-    const totalBudget = days.filter((d) => d.isOpen).reduce((acc, d) => acc + d.cityMinimum * settings.fullPayAmount, 0);
+    // シーズン予算総額 = 月別予算の合計
+    const seasonMonths = getMonthRanges(settings.seasonStart, settings.seasonEnd);
+    const totalBudget = seasonMonths.reduce(
+      (acc, m) => acc + (settings.monthlyBudgets?.[m.key] ?? 0),
+      0
+    );
 
     // Days with no shifts published
     const unpublishedOpenDays = days.filter((d) => d.isOpen && isFuture(parseISO(d.date))).filter((d) => {
@@ -60,7 +65,7 @@ export default function AdminDashboard() {
     const months = getMonthRanges(settings.seasonStart, settings.seasonEnd);
     return months.map((m) => {
       const mDays = days.filter((d) => d.isOpen && d.date >= m.startDate && d.date <= m.endDate);
-      const budget = mDays.reduce((acc, d) => acc + d.cityMinimum * settings.fullPayAmount, 0);
+      const budget = settings.monthlyBudgets?.[m.key] ?? 0;
       const attended = shifts.filter(
         (s) => s.date >= m.startDate && s.date <= m.endDate && s.status === 'attended'
       ).length;
@@ -83,7 +88,7 @@ export default function AdminDashboard() {
         <StatCard icon={<Users size={20} />} label="登録学生数" value={`${stats.activeStudents}名`} color="blue" />
         <StatCard icon={<CalendarDays size={20} />} label="公開済みシフト" value={`${stats.publishedShifts}件`} color="green" />
         <StatCard icon={<Coins size={20} />} label="給与総額（概算）" value={`¥${stats.totalPay.toLocaleString()}`} color="purple" />
-        <StatCard icon={<Coins size={20} />} label="市役所予算総額" value={`¥${stats.totalBudget.toLocaleString()}`} color="orange" />
+        <StatCard icon={<Coins size={20} />} label="シーズン予算総額" value={`¥${stats.totalBudget.toLocaleString()}`} color="orange" />
       </div>
 
       {/* Alerts */}

@@ -52,8 +52,13 @@ export async function firebaseSignIn(session: Session): Promise<void> {
     return;
   }
 
-  const cred = await signInAnonymously(auth);
-  const uid = cred.user.uid;
+  // 既存の匿名ユーザーがあれば再利用（IndexedDBで永続化されている場合）
+  let user = auth.currentUser;
+  if (!user) {
+    const cred = await signInAnonymously(auth);
+    user = cred.user;
+  }
+  const uid = user.uid;
 
   // Firestoreにセッション書き込み（セキュリティルールで使用）
   await setDoc(doc(db, 'sessions', uid), {
@@ -64,6 +69,35 @@ export async function firebaseSignIn(session: Session): Promise<void> {
   });
 
   setSession(session);
+}
+
+/** 匿名ログインを確実に実行して auth.uid を返す（セッションdocは作らない） */
+export async function ensureAnonAuth(): Promise<string | null> {
+  if (!isFirebaseConfigured || !auth) return null;
+  if (auth.currentUser) return auth.currentUser.uid;
+  const cred = await signInAnonymously(auth);
+  return cred.user.uid;
+}
+
+/** 現在のauth.uidに対してsession docを再作成（整合性回復用） */
+export async function ensureFirestoreSession(): Promise<boolean> {
+  if (!isFirebaseConfigured || !auth || !db) return false;
+  const user = auth.currentUser;
+  if (!user) return false;
+  const local = getSession();
+  if (!local) return false;
+  try {
+    await setDoc(doc(db, 'sessions', user.uid), {
+      role: local.role,
+      studentId: local.studentId ?? null,
+      studentName: local.studentName ?? null,
+      createdAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (e) {
+    console.error('[auth] ensureFirestoreSession failed', e);
+    return false;
+  }
 }
 
 /** サインアウト */

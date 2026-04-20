@@ -18,7 +18,7 @@ export default function StudentShell() {
         <div className="flex items-center gap-2">
           <span className="text-xl">🏄</span>
           <div>
-            <p className="text-sm font-bold text-gray-800">逗子LSCシフト管理</p>
+            <p className="text-sm font-bold text-gray-800">逗子SLSCシフト管理</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

@@ -17,6 +17,7 @@ interface ShiftState {
   getShiftsForStudent: (studentId: string) => ShiftAssignment[];
   getSummaries: () => StudentSummary[];
   updateShiftPayType: (id: string, payType: PayType) => void;
+  setShiftPayTypesBulk: (updates: { id: string; payType: PayType }[]) => Promise<void>;
   suggestPayTypes: (
     date: string,
     availableStudentIds: string[],
@@ -193,6 +194,28 @@ export const useShiftStore = isFirebaseConfigured
           }));
           await firestoreUpdate(COLLECTION, id, { payType });
         },
+        setShiftPayTypesBulk: async (updates) => {
+          if (updates.length === 0) return;
+          const map = new Map(updates.map((u) => [u.id, u.payType]));
+          // 一括で楽観更新（個別updateだとsubscribeCollectionの中間スナップショットで巻き戻る）
+          set((state) => ({
+            shifts: state.shifts.map((s) => (map.has(s.id) ? { ...s, payType: map.get(s.id)! } : s)),
+          }));
+          // 単一のbatch.commitで送信 → スナップショットも1回のみ
+          try {
+            await firestoreBatchWrite(
+              updates.map((u) => ({
+                type: 'update' as const,
+                collection: COLLECTION,
+                docId: u.id,
+                data: { payType: u.payType },
+              })),
+            );
+          } catch (e) {
+            console.error('[shifts] bulk update failed', e);
+            throw e;
+          }
+        },
         suggestPayTypes: (date, availableStudentIds, fullPaySlots) =>
           suggestPayTypesLogic(get().shifts, date, availableStudentIds, fullPaySlots),
       };
@@ -271,6 +294,13 @@ export const useShiftStore = isFirebaseConfigured
             set((state) => ({
               shifts: state.shifts.map((s) => (s.id === id ? { ...s, payType } : s)),
             })),
+          setShiftPayTypesBulk: async (updates) => {
+            if (updates.length === 0) return;
+            const map = new Map(updates.map((u) => [u.id, u.payType]));
+            set((state) => ({
+              shifts: state.shifts.map((s) => (map.has(s.id) ? { ...s, payType: map.get(s.id)! } : s)),
+            }));
+          },
           suggestPayTypes: (date, availableStudentIds, fullPaySlots) =>
             suggestPayTypesLogic(get().shifts, date, availableStudentIds, fullPaySlots),
         }),

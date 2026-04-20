@@ -49,54 +49,31 @@ export default function AdminShiftEdit() {
 
   const draftCount = dayShifts.filter((s) => s.status === 'draft').length;
 
-  // シーズン全体の予算と余剰（月次鶴亀算ベース）
-  const seasonBudget = useMemo(() => {
-    const totalBudget = openDays.reduce((acc, d) => acc + d.cityMinimum * settings.fullPayAmount, 0);
-    // 延べ出勤人数（シフト割当済み）
+  // シーズン全体のサマリー（月別予算の合計 + 延べ出勤人数）
+  const seasonSummary = useMemo(() => {
+    const totalBudget = Object.values(settings.monthlyBudgets ?? {}).reduce((acc, v) => acc + (v || 0), 0);
     const totalPersonDays = shifts.filter((s) => s.status !== 'cancelled' && s.status !== 'draft').length;
-    // 鶴亀算
-    const diff = settings.fullPayAmount - settings.vPayAmount;
-    const fullSlots = totalPersonDays > 0
-      ? Math.max(0, Math.floor((totalBudget - totalPersonDays * settings.vPayAmount) / diff))
-      : 0;
-    const totalPlannedPay = fullSlots * settings.fullPayAmount + (totalPersonDays - fullSlots) * settings.vPayAmount;
-    const totalSurplus = totalBudget - totalPlannedPay;
-    return { totalBudget, totalPlannedPay, totalSurplus, totalPersonDays, fullSlots, vSlots: totalPersonDays - fullSlots };
-  }, [openDays, shifts, settings]);
+    return { totalBudget, totalPersonDays };
+  }, [shifts, settings.monthlyBudgets]);
 
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">シフト作成</h1>
 
       {/* ── シーズン予算サマリー ── */}
-      <div className={`rounded-xl border p-4 ${seasonBudget.totalSurplus > 0 ? 'bg-amber-50 border-amber-300' : 'bg-green-50 border-green-300'}`}>
+      <div className="rounded-xl border p-4 bg-blue-50 border-blue-200">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-xs font-medium text-gray-500">シーズン予算</p>
-            <p className="text-sm font-bold text-gray-800">¥{seasonBudget.totalBudget.toLocaleString()}</p>
+            <p className="text-xs font-medium text-gray-500">シーズン予算（月別合計）</p>
+            <p className="text-sm font-bold text-gray-800">¥{seasonSummary.totalBudget.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs font-medium text-gray-500">延べ出勤</p>
-            <p className="text-sm font-bold text-gray-800">{seasonBudget.totalPersonDays}人日</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-gray-500">計画給与</p>
-            <p className="text-sm font-bold text-gray-800">¥{seasonBudget.totalPlannedPay.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-gray-500">累計余剰</p>
-            <p className={`text-lg font-bold ${seasonBudget.totalSurplus > 0 ? 'text-amber-700' : 'text-green-700'}`}>
-              ¥{seasonBudget.totalSurplus.toLocaleString()}
-            </p>
+            <p className="text-xs font-medium text-gray-500">延べ出勤（シフト確定分）</p>
+            <p className="text-sm font-bold text-gray-800">{seasonSummary.totalPersonDays}人日</p>
           </div>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          鶴亀算: 1枠 {seasonBudget.fullSlots}名 × ¥{settings.fullPayAmount.toLocaleString()} + V枠 {seasonBudget.vSlots}名 × ¥{settings.vPayAmount.toLocaleString()}
-          {seasonBudget.totalSurplus > 0 && (
-            <span className="text-amber-600 ml-2">
-              （余剰 ¥{seasonBudget.totalSurplus.toLocaleString()} は端数）
-            </span>
-          )}
+          ※ 1/V の配分は「給与配分」ページで月単位に計算されます
         </p>
       </div>
 
@@ -129,26 +106,8 @@ export default function AdminShiftEdit() {
 
           {/* Day settings */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">市役所ミニマム人数</label>
-                <input
-                  type="number"
-                  min={0}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={dayData.cityMinimum}
-                  onChange={(e) => updateDay(selectedDate, { cityMinimum: Number(e.target.value) })}
-                />
-                <p className="text-xs text-gray-400 mt-1">この日の予算: ¥{(dayData.cityMinimum * settings.fullPayAmount).toLocaleString()}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">現在のシフト人数</p>
-                <p className="text-2xl font-bold text-gray-800">{dayShifts.length}<span className="text-sm text-gray-400 ml-1">名</span></p>
-                {dayShifts.length < dayData.cityMinimum && (
-                  <p className="text-xs text-red-500 mt-1">ミニマム {dayData.cityMinimum}名 に {dayData.cityMinimum - dayShifts.length}名 不足</p>
-                )}
-              </div>
-            </div>
+            <p className="text-xs font-medium text-gray-500 mb-1">現在のシフト人数</p>
+            <p className="text-2xl font-bold text-gray-800">{dayShifts.length}<span className="text-sm text-gray-400 ml-1">名</span></p>
           </div>
 
           {/* Actions */}

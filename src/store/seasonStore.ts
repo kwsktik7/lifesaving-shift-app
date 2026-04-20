@@ -7,18 +7,16 @@ import { isFirebaseConfigured, subscribeCollection, firestoreSet, firestoreBatch
 interface SeasonState {
   days: SeasonDay[];
   _ready: boolean;
-  initSeason: (start: string, end: string, defaultMinimum?: number) => void;
+  initSeason: (start: string, end: string) => void;
   updateDay: (date: string, patch: Partial<Omit<SeasonDay, 'date'>>) => void;
   getDay: (date: string) => SeasonDay | undefined;
 }
 
 const COLLECTION = 'seasonDays';
 
-function buildSeasonDays(start: string, end: string, defaultMinimum = 3): SeasonDay[] {
+function buildSeasonDays(start: string, end: string): SeasonDay[] {
   return eachDayOfInterval({ start: parseISO(start), end: parseISO(end) }).map((d) => ({
     date: format(d, 'yyyy-MM-dd'),
-    cityMinimum: defaultMinimum,
-    actualSlots: defaultMinimum,
     isOpen: true,
     note: '',
   }));
@@ -35,17 +33,17 @@ export const useSeasonStore = isFirebaseConfigured
       return {
         days: [],
         _ready: false,
-        initSeason: async (start, end, defaultMinimum = 3) => {
+        initSeason: async (start, end) => {
           const existing = get().days;
           if (existing.length > 0) return;
-          const days = buildSeasonDays(start, end, defaultMinimum);
+          const days = buildSeasonDays(start, end);
           set({ days });
           await firestoreBatchWrite(
             days.map((d) => ({
               type: 'set' as const,
               collection: COLLECTION,
               docId: d.date,
-              data: { cityMinimum: d.cityMinimum, actualSlots: d.actualSlots, isOpen: d.isOpen, note: d.note },
+              data: { isOpen: d.isOpen, note: d.note },
             })),
           );
         },
@@ -67,10 +65,10 @@ export const useSeasonStore = isFirebaseConfigured
         (set, get) => ({
           days: [],
           _ready: true,
-          initSeason: (start, end, defaultMinimum = 3) => {
+          initSeason: (start, end) => {
             const existing = get().days;
             if (existing.length > 0) return;
-            set({ days: buildSeasonDays(start, end, defaultMinimum) });
+            set({ days: buildSeasonDays(start, end) });
           },
           updateDay: (date, patch) =>
             set((state) => ({

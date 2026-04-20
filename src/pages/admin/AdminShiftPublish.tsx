@@ -37,7 +37,6 @@ export default function AdminShiftPublish() {
     return b.student!.grade.localeCompare(a.student!.grade);
   });
 
-  const currentDay = days.find((d) => d.date === currentDate);
   const leaderCount = dayMembers.filter((m) => m.student!.isLeader).length;
   const pwcCount = dayMembers.filter((m) => m.student!.hasPwc).length;
 
@@ -137,11 +136,6 @@ export default function AdminShiftPublish() {
                     </div>
                   </div>
                 </div>
-                {currentDay && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    市役所ミニマム: {currentDay.cityMinimum}名 / 配置: {currentDay.actualSlots}名
-                  </p>
-                )}
               </div>
 
               {/* Warnings */}

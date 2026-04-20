@@ -179,14 +179,10 @@ export default function ShiftGrid({
             </td>
             {openDays.map((d) => {
               const count = shifts.filter((s) => s.date === d.date && s.status !== 'cancelled').length;
-              const dayData = days.find((day) => day.date === d.date);
-              const isShort = dayData && count < dayData.cityMinimum;
               return (
                 <td
                   key={d.date}
-                  className={`border border-gray-200 text-center font-semibold ${cellSize} cursor-pointer ${
-                    isShort ? 'text-red-600 bg-red-50' : 'text-gray-700'
-                  }`}
+                  className={`border border-gray-200 text-center font-semibold ${cellSize} cursor-pointer text-gray-700`}
                   onClick={() => onDateClick?.(d.date)}
                 >
                   {count > 0 ? count : ''}
