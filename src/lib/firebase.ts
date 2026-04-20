@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -17,10 +17,6 @@ export const isFirebaseConfigured =
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 
-// メモリキャッシュのみ (IndexedDBを介さないので安定 + 高速)
-export const db = app
-  ? initializeFirestore(app, {
-      localCache: memoryLocalCache(),
-    })
-  : null;
+// シンプルなデフォルト初期化 (キャッシュはSDK既定のメモリ)
+export const db = app ? getFirestore(app) : null;
 export const auth = app ? getAuth(app) : null;
