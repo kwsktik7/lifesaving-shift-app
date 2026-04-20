@@ -50,9 +50,10 @@ function LoadingScreen() {
 export default function App() {
   const { settings, _ready: settingsReady } = useSettingsStore();
   const { initSeason, _ready: seasonReady } = useSeasonStore();
-  const { _ready: studentsReady } = useStudentStore();
-  const { _ready: availReady } = useAvailabilityStore();
-  const { _ready: shiftsReady } = useShiftStore();
+  // students/availability/shifts は各ページが使う時に読む(ログイン画面は待たない)
+  useStudentStore();
+  useAvailabilityStore();
+  useShiftStore();
 
   useEffect(() => {
     if (settingsReady && seasonReady) {
@@ -74,8 +75,9 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Firebase有効時: 全ストアのhydrationを待つ
-  if (isFirebaseConfigured && !(settingsReady && seasonReady && studentsReady && availReady && shiftsReady)) {
+  // Firebase有効時: settings と season だけ待つ(ログイン画面に必要な最小限)
+  // 他の大きなコレクションは各ページ内で遅延ロードされる
+  if (isFirebaseConfigured && !(settingsReady && seasonReady)) {
     return <LoadingScreen />;
   }
 

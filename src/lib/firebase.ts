@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -17,10 +17,10 @@ export const isFirebaseConfigured =
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 
-// オフライン永続化（マルチタブ対応） — 新API
+// メモリキャッシュのみ (IndexedDBを介さないので安定 + 高速)
 export const db = app
   ? initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      localCache: memoryLocalCache(),
     })
   : null;
 export const auth = app ? getAuth(app) : null;
