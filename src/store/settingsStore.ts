@@ -17,8 +17,8 @@ interface SettingsState {
 const DEFAULT_SETTINGS: AppSettings = {
   adminPasswordHash: '',
   leaderPasswordHash: '',
-  seasonStart: '2025-07-03',
-  seasonEnd: '2025-09-06',
+  seasonStart: '2026-07-03',
+  seasonEnd: '2026-09-06',
   fullPayAmount: 9100,
   vPayAmount: 2000,
   clubName: '逗子ライフセービングクラブ',
