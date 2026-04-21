@@ -5,7 +5,26 @@ import { isFirebaseConfigured, auth } from './lib/firebase'
 import { migrateLocalStorageToFirestore } from './lib/migrate'
 import { signInAnonymously } from 'firebase/auth'
 
+// 既存のService Worker(旧PWA)を全削除 + キャッシュクリア
+async function cleanupServiceWorkers() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) {
+        await reg.unregister();
+      }
+    } catch {}
+  }
+  if ('caches' in window) {
+    try {
+      const keys = await caches.keys();
+      for (const k of keys) await caches.delete(k);
+    } catch {}
+  }
+}
+
 async function init() {
+  await cleanupServiceWorkers();
   if (isFirebaseConfigured && auth) {
     // まず匿名認証 → Firestoreセキュリティルール通過のため
     try {
