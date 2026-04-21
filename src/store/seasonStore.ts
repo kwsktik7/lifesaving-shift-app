@@ -38,14 +38,14 @@ export const useSeasonStore = isFirebaseConfigured
           if (existing.length > 0) return;
           const days = buildSeasonDays(start, end);
           set({ days });
-          await firestoreBatchWrite(
+          firestoreBatchWrite(
             days.map((d) => ({
               type: 'set' as const,
               collection: COLLECTION,
               docId: d.date,
               data: { isOpen: d.isOpen, note: d.note },
             })),
-          );
+          ).catch((e) => console.warn('[season] initSeason', e));
         },
         updateDay: async (date, patch) => {
           set((state) => ({
@@ -54,7 +54,7 @@ export const useSeasonStore = isFirebaseConfigured
           const day = get().days.find((d) => d.date === date);
           if (day) {
             const { date: _, ...rest } = day;
-            await firestoreSet(COLLECTION, date, rest);
+            firestoreSet(COLLECTION, date, rest).catch((e) => console.warn('[season] updateDay', e));
           }
         },
         getDay: (date) => get().days.find((d) => d.date === date),

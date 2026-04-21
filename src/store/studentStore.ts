@@ -26,6 +26,7 @@ export const useStudentStore = isFirebaseConfigured
         (students) => set({ students, _ready: true }),
       );
 
+      // 書き込みはfire-and-forget: long-polling下でSDK promise が resolve しない事象への対策
       return {
         students: [],
         _ready: false,
@@ -42,7 +43,7 @@ export const useStudentStore = isFirebaseConfigured
           };
           set((state) => ({ students: [...state.students, student] }));
           const { id: _, ...docData } = student;
-          await firestoreSet(COLLECTION, id, docData);
+          firestoreSet(COLLECTION, id, docData).catch((e) => console.warn('[students] addStudent', e));
         },
         createAccount: async ({ pin, id, ...data }) => {
           const student: Student = {
@@ -51,31 +52,31 @@ export const useStudentStore = isFirebaseConfigured
             pinHash: hashPin(pin),
           };
           const { id: _, ...docData } = student;
+          // createAccount はサインアップ直後なので書き込み完了を待つ
           await firestoreSet(COLLECTION, id, docData);
-          // 楽観更新はスキップ(subscribeCollectionで反映される)
         },
         updateStudent: async (id, patch) => {
           set((state) => ({
             students: state.students.map((s) => (s.id === id ? { ...s, ...patch } : s)),
           }));
-          await firestoreUpdate(COLLECTION, id, patch);
+          firestoreUpdate(COLLECTION, id, patch).catch((e) => console.warn('[students] updateStudent', e));
         },
         updateStudentPin: async (id, pin) => {
           const pinHash = hashPin(pin);
           set((state) => ({
             students: state.students.map((s) => (s.id === id ? { ...s, pinHash } : s)),
           }));
-          await firestoreUpdate(COLLECTION, id, { pinHash });
+          firestoreUpdate(COLLECTION, id, { pinHash }).catch((e) => console.warn('[students] updatePin', e));
         },
         deactivateStudent: async (id) => {
           set((state) => ({
             students: state.students.map((s) => (s.id === id ? { ...s, isActive: false } : s)),
           }));
-          await firestoreUpdate(COLLECTION, id, { isActive: false });
+          firestoreUpdate(COLLECTION, id, { isActive: false }).catch((e) => console.warn('[students] deactivate', e));
         },
         deleteStudent: async (id) => {
           set((state) => ({ students: state.students.filter((s) => s.id !== id) }));
-          await firestoreDelete(COLLECTION, id);
+          firestoreDelete(COLLECTION, id).catch((e) => console.warn('[students] delete', e));
         },
       };
     })

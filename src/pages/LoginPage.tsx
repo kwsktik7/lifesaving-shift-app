@@ -38,7 +38,7 @@ export default function LoginPage() {
   const [signupDay, setSignupDay] = useState('');
 
   const { students, createAccount } = useStudentStore();
-  const { settings, verifyAdminPassword, setAdminPassword, verifyLeaderPassword } = useSettingsStore();
+  const { settings, _ready: settingsReady, verifyAdminPassword, setAdminPassword, verifyLeaderPassword } = useSettingsStore();
   const navigate = useNavigate();
 
   const activeStudents = students
@@ -350,7 +350,11 @@ export default function LoginPage() {
           )
         ) : (
           <form onSubmit={handleAdminLogin} className="space-y-4">
-            {!settings.adminPasswordHash && (
+            {!settingsReady ? (
+              <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
+                設定を同期中... しばらくお待ちください
+              </p>
+            ) : !settings.adminPasswordHash && (
               <p className="text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
                 初回ログインです。管理者パスワードを設定してください。
               </p>
@@ -368,10 +372,10 @@ export default function LoginPage() {
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !settingsReady}
               className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
-              {loading ? 'ログイン中...' : (settings.adminPasswordHash ? 'ログイン' : 'パスワードを設定してログイン')}
+              {loading ? 'ログイン中...' : !settingsReady ? '読み込み中...' : (settings.adminPasswordHash ? 'ログイン' : 'パスワードを設定してログイン')}
             </button>
           </form>
         )}

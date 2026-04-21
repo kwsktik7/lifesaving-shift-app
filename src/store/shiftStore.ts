@@ -112,7 +112,7 @@ export const useShiftStore = isFirebaseConfigured
             set((state) => ({
               shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType } : s)),
             }));
-            await firestoreUpdate(COLLECTION, existing.id, { payType });
+            firestoreUpdate(COLLECTION, existing.id, { payType }).catch((e) => console.warn('[shifts] assign-update', e));
             return;
           }
           const shift: ShiftAssignment = {
@@ -126,13 +126,13 @@ export const useShiftStore = isFirebaseConfigured
             createdAt: new Date().toISOString(),
           };
           set((state) => ({ shifts: [...state.shifts, shift] }));
-          await firestoreSet(COLLECTION, shift.id, shiftToDoc(shift));
+          firestoreSet(COLLECTION, shift.id, shiftToDoc(shift)).catch((e) => console.warn('[shifts] assign-new', e));
         },
         updateShift: async (id, patch) => {
           set((state) => ({
             shifts: state.shifts.map((s) => (s.id === id ? { ...s, ...patch } : s)),
           }));
-          await firestoreUpdate(COLLECTION, id, patch);
+          firestoreUpdate(COLLECTION, id, patch).catch((e) => console.warn('[shifts] update', e));
         },
         addReplacementShift: async (originalShiftId, replacementStudentId, attendance) => {
           const original = get().shifts.find((s) => s.id === originalShiftId);
@@ -156,14 +156,14 @@ export const useShiftStore = isFirebaseConfigured
               newShift,
             ],
           }));
-          await firestoreBatchWrite([
+          firestoreBatchWrite([
             { type: 'update', collection: COLLECTION, docId: originalShiftId, data: { replacedBy: replacementStudentId } },
             { type: 'set', collection: COLLECTION, docId: newShift.id, data: shiftToDoc(newShift) },
-          ]);
+          ]).catch((e) => console.warn('[shifts] replacement', e));
         },
         removeShift: async (id) => {
           set((state) => ({ shifts: state.shifts.filter((s) => s.id !== id) }));
-          await firestoreDelete(COLLECTION, id);
+          firestoreDelete(COLLECTION, id).catch((e) => console.warn('[shifts] delete', e));
         },
         publishDay: async (date) => {
           const toPublish = get().shifts.filter((s) => s.date === date && s.status === 'draft');
@@ -173,14 +173,14 @@ export const useShiftStore = isFirebaseConfigured
             ),
           }));
           if (toPublish.length > 0) {
-            await firestoreBatchWrite(
+            firestoreBatchWrite(
               toPublish.map((s) => ({
                 type: 'update' as const,
                 collection: COLLECTION,
                 docId: s.id,
                 data: { status: 'published' },
               })),
-            );
+            ).catch((e) => console.warn('[shifts] publish', e));
           }
         },
         getShiftsForDate: (date) =>
@@ -192,7 +192,7 @@ export const useShiftStore = isFirebaseConfigured
           set((state) => ({
             shifts: state.shifts.map((s) => (s.id === id ? { ...s, payType } : s)),
           }));
-          await firestoreUpdate(COLLECTION, id, { payType });
+          firestoreUpdate(COLLECTION, id, { payType }).catch((e) => console.warn('[shifts] updatePayType', e));
         },
         setShiftPayTypesBulk: async (updates) => {
           if (updates.length === 0) return;
@@ -201,20 +201,15 @@ export const useShiftStore = isFirebaseConfigured
           set((state) => ({
             shifts: state.shifts.map((s) => (map.has(s.id) ? { ...s, payType: map.get(s.id)! } : s)),
           }));
-          // 単一のbatch.commitで送信 → スナップショットも1回のみ
-          try {
-            await firestoreBatchWrite(
-              updates.map((u) => ({
-                type: 'update' as const,
-                collection: COLLECTION,
-                docId: u.id,
-                data: { payType: u.payType },
-              })),
-            );
-          } catch (e) {
-            console.error('[shifts] bulk update failed', e);
-            throw e;
-          }
+          // 単一のbatch.commitで送信 → スナップショットも1回のみ (fire-and-forget)
+          firestoreBatchWrite(
+            updates.map((u) => ({
+              type: 'update' as const,
+              collection: COLLECTION,
+              docId: u.id,
+              data: { payType: u.payType },
+            })),
+          ).catch((e) => console.warn('[shifts] bulk update', e));
         },
         suggestPayTypes: (date, availableStudentIds, fullPaySlots) =>
           suggestPayTypesLogic(get().shifts, date, availableStudentIds, fullPaySlots),

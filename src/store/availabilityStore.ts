@@ -50,7 +50,7 @@ export const useAvailabilityStore = isFirebaseConfigured
             const filtered = state.availabilities.filter((a) => a.id !== id);
             return { availabilities: [...filtered, { ...doc, id }] };
           });
-          await firestoreSet(COLLECTION, id, doc);
+          firestoreSet(COLLECTION, id, doc).catch((e) => console.warn('[availability] set', e));
         },
         setBulk: async (studentId, entries) => {
           const now = new Date().toISOString();
@@ -69,20 +69,24 @@ export const useAvailabilityStore = isFirebaseConfigured
 
           // Firestoreバッチ: 旧データ削除 + 新データ書き込み
           const ops: { type: 'set' | 'delete'; collection: string; docId: string; data?: Record<string, unknown> }[] = [];
-          // 旧データ取得して削除
+          // 旧データ取得して削除 (getDocs はreadなので完了を待つ)
           if (db) {
-            const q = query(collection(db, COLLECTION), where('studentId', '==', studentId));
-            const snap = await getDocs(q);
-            snap.docs.forEach((d) => {
-              ops.push({ type: 'delete', collection: COLLECTION, docId: d.id });
-            });
+            try {
+              const q = query(collection(db, COLLECTION), where('studentId', '==', studentId));
+              const snap = await getDocs(q);
+              snap.docs.forEach((d) => {
+                ops.push({ type: 'delete', collection: COLLECTION, docId: d.id });
+              });
+            } catch (e) {
+              console.warn('[availability] getDocs', e);
+            }
           }
           // 新データ書き込み
           for (const doc of newDocs) {
             const { id, ...data } = doc;
             ops.push({ type: 'set', collection: COLLECTION, docId: id, data });
           }
-          await firestoreBatchWrite(ops);
+          firestoreBatchWrite(ops).catch((e) => console.warn('[availability] batch', e));
         },
         getForStudent: (studentId) =>
           get().availabilities.filter((a) => a.studentId === studentId),

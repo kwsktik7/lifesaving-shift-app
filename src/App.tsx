@@ -6,7 +6,6 @@ import { useStudentStore } from '@/store/studentStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useShiftStore } from '@/store/shiftStore';
 import { getSession } from '@/utils/auth';
-import { isFirebaseConfigured } from '@/lib/firebase';
 
 // Auth
 import LoginPage from '@/pages/LoginPage';
@@ -36,17 +35,6 @@ function RequireAuth({ role, children }: { role: 'admin' | 'student'; children: 
   return <>{children}</>;
 }
 
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-4xl mb-4">🏄</div>
-        <div className="animate-pulse text-gray-500 text-sm">読み込み中...</div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const { settings, _ready: settingsReady } = useSettingsStore();
   const { initSeason, _ready: seasonReady } = useSeasonStore();
@@ -61,12 +49,8 @@ export default function App() {
     }
   }, [settings.seasonStart, settings.seasonEnd, initSeason, settingsReady, seasonReady]);
 
-  // Firebase有効時: settings と season だけ待つ(ログイン画面に必要な最小限)
-  // 他の大きなコレクションは各ページ内で遅延ロードされる
-  if (isFirebaseConfigured && !(settingsReady && seasonReady)) {
-    return <LoadingScreen />;
-  }
-
+  // Firestoreスナップショット到着を全画面で待たない。
+  // 各ページが必要なデータの_readyを自分で判定し、必要ならページ内で同期中UIを出す。
   return (
     <BrowserRouter>
       <Routes>
