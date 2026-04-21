@@ -179,12 +179,14 @@ export default function StudentAvailability() {
     }
   }
 
-  function renderCell(date: string, status: AvailabilityStatus | undefined, isWeekend: boolean, isEditing: boolean) {
+  function renderCell(date: string, status: AvailabilityStatus | undefined, dow: number, isEditing: boolean) {
     const isSelected = selectedDates.has(date);
+    // 日=0 赤, 土=6 青, 平日 グレー
+    const dateColor = dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-600' : 'text-gray-700';
 
     const inner = (
       <>
-        <span className={`text-xs font-medium ${isWeekend ? 'text-blue-600' : 'text-gray-700'}`}>
+        <span className={`text-xs font-medium ${dateColor}`}>
           {format(parseISO(date), 'd')}
         </span>
         <span className={`font-bold leading-none ${cellTextColor(status)}`} style={{ fontSize: status === 'am' || status === 'pm' ? '9px' : '13px' }}>
@@ -292,8 +294,8 @@ export default function StudentAvailability() {
                 {format(parseISO(month + '-01'), 'yyyy年M月', { locale: ja })}
               </h2>
               <div className="grid grid-cols-7 gap-1.5">
-                {['日', '月', '火', '水', '木', '金', '土'].map((d) => (
-                  <div key={d} className="text-center text-xs text-gray-400 py-1 font-medium">{d}</div>
+                {['日', '月', '火', '水', '木', '金', '土'].map((d, i) => (
+                  <div key={d} className={`text-center text-xs py-1 font-medium ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-400'}`}>{d}</div>
                 ))}
                 {(() => {
                   const firstDay = parseISO(monthDays[0].date);
@@ -302,7 +304,7 @@ export default function StudentAvailability() {
                 {monthDays.map((day) => {
                   const val = localAvail.get(day.date);
                   const dow = parseISO(day.date).getDay();
-                  return renderCell(day.date, val?.status, dow === 0 || dow === 6, false);
+                  return renderCell(day.date, val?.status, dow, false);
                 })}
               </div>
             </div>
@@ -353,8 +355,8 @@ export default function StudentAvailability() {
                 </button>
               </div>
               <div className="grid grid-cols-7 gap-1.5">
-                {['日', '月', '火', '水', '木', '金', '土'].map((d) => (
-                  <div key={d} className="text-center text-xs text-gray-400 py-1 font-medium">{d}</div>
+                {['日', '月', '火', '水', '木', '金', '土'].map((d, i) => (
+                  <div key={d} className={`text-center text-xs py-1 font-medium ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-400'}`}>{d}</div>
                 ))}
                 {(() => {
                   const firstDay = parseISO(monthDays[0].date);
@@ -363,7 +365,7 @@ export default function StudentAvailability() {
                 {monthDays.map((day) => {
                   const val = localAvail.get(day.date);
                   const dow = parseISO(day.date).getDay();
-                  return renderCell(day.date, val?.status, dow === 0 || dow === 6, true);
+                  return renderCell(day.date, val?.status, dow, true);
                 })}
               </div>
             </div>

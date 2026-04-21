@@ -14,6 +14,15 @@ export interface Student {
   bankAccount?: string;
 }
 
+/**
+ * 役職定義。管理者が設定ページで編集でき、新規アカウント作成画面の役職ドロップダウンに反映される。
+ * isLeader=true の役職を選んだ場合は監視長パスワードを要求する。
+ */
+export interface RoleDef {
+  name: string;
+  isLeader: boolean;
+}
+
 export interface SeasonDay {
   date: string; // "YYYY-MM-DD"
   isOpen: boolean;
@@ -64,6 +73,8 @@ export interface AppSettings {
   allocatedMonths: string[];
   /** シフト提出の締め切りフラグ。trueなら学生は変更不可 */
   availabilityLocked: boolean;
+  /** 新規アカウント作成画面の役職ドロップダウンに並ぶ選択肢。未設定時はデフォルト(ガード/監視長/副監視長) */
+  roles?: RoleDef[];
 }
 
 export interface StudentSummary {

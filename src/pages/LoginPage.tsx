@@ -14,10 +14,12 @@ function normalizeName(s: string): string {
 type StudentMode = 'login' | 'signup';
 
 const GRADE_OPTIONS = ['1年', '2年', '3年', '4年'];
-const LEADER_OPTIONS = [
-  { value: '', label: '（なし）' },
-  { value: '監視長', label: '監視長' },
-  { value: '副監視長', label: '副監視長' },
+
+/** 役職リストが未設定の場合のフォールバック */
+const DEFAULT_ROLES: { name: string; isLeader: boolean }[] = [
+  { name: 'ガード', isLeader: false },
+  { name: '監視長', isLeader: true },
+  { name: '副監視長', isLeader: true },
 ];
 
 export default function LoginPage() {
@@ -32,7 +34,7 @@ export default function LoginPage() {
   const [signupName, setSignupName] = useState('');
   const [signupGrade, setSignupGrade] = useState('1年');
   const [signupHasPwc, setSignupHasPwc] = useState(false);
-  const [signupLeader, setSignupLeader] = useState('');
+  const [signupRole, setSignupRole] = useState('ガード');
   const [signupLeaderPass, setSignupLeaderPass] = useState('');
   const [signupMonth, setSignupMonth] = useState('');
   const [signupDay, setSignupDay] = useState('');
@@ -40,6 +42,10 @@ export default function LoginPage() {
   const { students, createAccount } = useStudentStore();
   const { settings, _ready: settingsReady, verifyAdminPassword, setAdminPassword, verifyLeaderPassword } = useSettingsStore();
   const navigate = useNavigate();
+
+  // 役職リストは設定から動的に取得。未設定時はデフォルト
+  const roleOptions = (settings.roles && settings.roles.length > 0) ? settings.roles : DEFAULT_ROLES;
+  const selectedRoleDef = roleOptions.find((r) => r.name === signupRole);
 
   const activeStudents = students
     .filter((s) => s.isActive)
@@ -90,8 +96,10 @@ export default function LoginPage() {
     if (!Number.isInteger(d) || d < 1 || d > 31) { setError('誕生日は1〜31で入力してください'); return; }
     const pinStr = String(m).padStart(2, '0') + String(d).padStart(2, '0');
 
-    // 監視長/副監視長を選択した場合はパスワード検証
-    if (signupLeader === '監視長' || signupLeader === '副監視長') {
+    const isLeader = selectedRoleDef?.isLeader ?? false;
+
+    // 監視長/副監視長などシフト生成に影響する役職はパスワード必須
+    if (isLeader) {
       if (!signupLeaderPass) {
         setError('監視長パスワードを入力してください');
         return;
@@ -122,8 +130,6 @@ export default function LoginPage() {
           return;
         }
       }
-      const role = signupLeader || 'ガード';
-      const isLeader = signupLeader === '監視長' || signupLeader === '副監視長';
       await createAccount({
         id: uid,
         name,
@@ -132,7 +138,7 @@ export default function LoginPage() {
         isActive: true,
         joinYear: new Date().getFullYear(),
         grade: signupGrade,
-        role,
+        role: signupRole,
         hasPwc: signupHasPwc,
         isLeader,
         birthday: pinStr,
@@ -281,18 +287,20 @@ export default function LoginPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">役職（該当者のみ）</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">役職</label>
                 <select
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                  value={signupLeader}
-                  onChange={(e) => { setSignupLeader(e.target.value); setSignupLeaderPass(''); setError(''); }}
+                  value={signupRole}
+                  onChange={(e) => { setSignupRole(e.target.value); setSignupLeaderPass(''); setError(''); }}
                 >
-                  {LEADER_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                  {roleOptions.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.name}{r.isLeader ? '（要パスワード）' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
-              {(signupLeader === '監視長' || signupLeader === '副監視長') && (
+              {selectedRoleDef?.isLeader && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">監視長パスワード</label>
                   <input
@@ -302,6 +310,9 @@ export default function LoginPage() {
                     onChange={(e) => setSignupLeaderPass(e.target.value)}
                     placeholder="管理者から共有されたパスワード"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    シフト生成に影響する役職のため、確認のためパスワードを入力してください。
+                  </p>
                 </div>
               )}
               <div>

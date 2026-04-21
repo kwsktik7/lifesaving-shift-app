@@ -167,6 +167,59 @@ export default function AdminSettings() {
   const [savingAdminPw, setSavingAdminPw] = useState(false);
   const [savingLeaderPw, setSavingLeaderPw] = useState(false);
 
+  // 役職リスト編集
+  const currentRoles = settings.roles ?? [
+    { name: 'ガード', isLeader: false },
+    { name: '監視長', isLeader: true },
+    { name: '副監視長', isLeader: true },
+  ];
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleLeader, setNewRoleLeader] = useState(false);
+
+  async function addRole() {
+    const name = newRoleName.trim();
+    if (!name) return;
+    if (currentRoles.some((r) => r.name === name)) {
+      setErrorMsg(`役職「${name}」は既に追加されています`);
+      return;
+    }
+    try {
+      await updateSettings({ roles: [...currentRoles, { name, isLeader: newRoleLeader }] });
+      setNewRoleName('');
+      setNewRoleLeader(false);
+      setErrorMsg('');
+      setSuccessMsg(`役職「${name}」を追加しました`);
+      setTimeout(() => setSuccessMsg(''), 2000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`追加に失敗しました: ${msg}`);
+    }
+  }
+
+  async function toggleRoleLeader(idx: number) {
+    const next = currentRoles.map((r, i) => (i === idx ? { ...r, isLeader: !r.isLeader } : r));
+    try {
+      await updateSettings({ roles: next });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`更新に失敗しました: ${msg}`);
+    }
+  }
+
+  async function removeRole(idx: number) {
+    const target = currentRoles[idx];
+    if (!confirm(`役職「${target.name}」を削除します。よろしいですか？`)) return;
+    const next = currentRoles.filter((_, i) => i !== idx);
+    try {
+      await updateSettings({ roles: next });
+      setSuccessMsg(`役職「${target.name}」を削除しました`);
+      setTimeout(() => setSuccessMsg(''), 2000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`削除に失敗しました: ${msg}`);
+    }
+  }
+
   async function handleSetAdminPassword() {
     if (!newAdminPass) return;
     setSavingAdminPw(true);
@@ -418,6 +471,75 @@ export default function AdminSettings() {
               }`}
             >
               {savingLeaderPw ? '保存中...' : '保存'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Role list */}
+      <section>
+        <h2 className="text-base font-semibold text-gray-700 mb-2">役職リスト</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          新規アカウント作成時に学生が選択できる役職の一覧。「要パスワード」にチェックすると、選択時に監視長パスワードが要求されます(シフト生成への影響があるため)。
+        </p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          {currentRoles.length === 0 ? (
+            <p className="text-sm text-gray-400">役職が登録されていません</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {currentRoles.map((r, idx) => (
+                <div key={`${r.name}-${idx}`} className="flex items-center justify-between py-2">
+                  <span className="text-sm text-gray-800 font-medium">{r.name}</span>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={r.isLeader}
+                        onChange={() => toggleRoleLeader(idx)}
+                        className="w-3.5 h-3.5"
+                      />
+                      要パスワード
+                    </label>
+                    <button
+                      onClick={() => removeRole(idx)}
+                      className="text-red-400 hover:text-red-600 transition-colors"
+                      title="削除"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="pt-2 border-t border-gray-100 flex gap-2 flex-wrap">
+            <input
+              type="text"
+              placeholder="新しい役職名"
+              className="flex-1 min-w-[160px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={newRoleName}
+              onChange={(e) => setNewRoleName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addRole(); }}
+            />
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={newRoleLeader}
+                onChange={(e) => setNewRoleLeader(e.target.checked)}
+                className="w-3.5 h-3.5"
+              />
+              要パスワード
+            </label>
+            <button
+              onClick={addRole}
+              disabled={!newRoleName.trim()}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                newRoleName.trim()
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              追加
             </button>
           </div>
         </div>

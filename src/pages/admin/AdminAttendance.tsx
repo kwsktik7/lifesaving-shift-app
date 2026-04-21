@@ -253,7 +253,7 @@ export default function AdminAttendance() {
                               {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
                               {student?.name}
                             </p>
-                            <span className="text-xs text-gray-400">{student?.grade}</span>
+                            <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
                           </div>
                           <span className={`text-xs font-bold px-2 py-1 rounded-full ${
                             isHalf ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
@@ -277,7 +277,7 @@ export default function AdminAttendance() {
                               {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
                               {student?.name}
                             </p>
-                            <span className="text-xs text-gray-400">{student?.grade}</span>
+                            <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
                           </div>
                           <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-600">欠席</span>
                         </div>
@@ -309,7 +309,8 @@ export default function AdminAttendance() {
                                   {pair.absentStudent?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
                                   {pair.absentStudent?.name}
                                 </p>
-                                <span className="text-xs text-red-500 font-medium">欠席</span>
+                                <span className="text-xs text-gray-400">{pair.absentStudent?.grade}{pair.absentStudent?.role ? ` / ${pair.absentStudent.role}` : ''}</span>
+                                <span className="ml-2 text-xs text-red-500 font-medium">欠席</span>
                               </div>
                             </div>
 
@@ -334,7 +335,8 @@ export default function AdminAttendance() {
                                   {pair.replacementStudent?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
                                   {pair.replacementStudent?.name}
                                 </p>
-                                <span className={`text-xs font-medium ${repIsHalf ? 'text-yellow-600' : 'text-green-600'}`}>
+                                <span className="text-xs text-gray-400">{pair.replacementStudent?.grade}{pair.replacementStudent?.role ? ` / ${pair.replacementStudent.role}` : ''}</span>
+                                <span className={`ml-2 text-xs font-medium ${repIsHalf ? 'text-yellow-600' : 'text-green-600'}`}>
                                   {repIsHalf ? (pair.replacementShift?.attendance === 'am' ? '午前のみ' : '午後のみ') : '終日出勤'}
                                 </span>
                               </div>
@@ -427,7 +429,7 @@ export default function AdminAttendance() {
                                   )}
                                 </p>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">{student?.grade}</span>
+                                  <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
                                   {isAttended && !isHalf && <span className="text-xs text-green-600 font-medium">出勤（終日）</span>}
                                   {isHalf && <span className="text-xs text-yellow-600 font-medium">{shift.attendance === 'am' ? '午前のみ（半額）' : '午後のみ（半額）'}</span>}
                                   {isAbsent && !replacedByStudent && <span className="text-xs text-red-500 font-medium">欠席</span>}
@@ -556,7 +558,7 @@ export default function AdminAttendance() {
                               {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
                               {s.name}
                             </span>
-                            <span className="text-xs text-gray-400">{s.grade}</span>
+                            <span className="text-xs text-gray-400">{s.grade}{s.role ? ` / ${s.role}` : ''}</span>
                           </button>
                         ))
                       )}
