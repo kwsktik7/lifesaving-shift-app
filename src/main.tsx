@@ -25,8 +25,9 @@ async function cleanupServiceWorkers() {
 
 async function init() {
   await cleanupServiceWorkers();
+
   if (isFirebaseConfigured && auth) {
-    // まず匿名認証 → Firestoreセキュリティルール通過のため
+    // 匿名認証 → Firestoreセキュリティルール通過のため (ここは短時間で終わるので待つ)
     try {
       await signInAnonymously(auth);
       console.log('[auth] Anonymous sign-in complete');
@@ -34,15 +35,13 @@ async function init() {
       console.error('[auth] Anonymous sign-in failed:', err);
     }
 
-    // localStorageからFirestoreへの初回マイグレーション
-    try {
-      await migrateLocalStorageToFirestore();
-    } catch (err) {
+    // localStorage → Firestore マイグレーションは重い (getDocs が長時間ブロックする)
+    // React描画の裏で非同期実行し、描画を遅延させない
+    migrateLocalStorageToFirestore().catch((err) => {
       console.error('[migrate] Migration failed:', err);
-    }
+    });
   }
 
-  // 匿名認証完了後にストアのimportが走る（動的import）
   const { default: AppComponent } = await import('./App.tsx');
 
   createRoot(document.getElementById('root')!).render(
