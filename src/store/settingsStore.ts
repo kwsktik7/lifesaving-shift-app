@@ -57,19 +57,23 @@ export const useSettingsStore = isFirebaseConfigured
         },
       );
 
+      // 既知の問題: Firestore SDK v11 が long-polling 下で promise を resolve しない場合がある。
+      // 書き込み自体はサーバーに届いているのでfire-and-forget方式で運用する。
       return {
         settings: DEFAULT_SETTINGS,
         _ready: false,
         updateSettings: async (patch) => {
-          // 楽観更新
           set({ settings: { ...get().settings, ...patch } });
-          // Firestore部分更新 (updateDocなので他フィールド維持)
-          await firestoreUpdate(COLLECTION, DOC_ID, patch as Record<string, unknown>);
+          firestoreUpdate(COLLECTION, DOC_ID, patch as Record<string, unknown>).catch((e) => {
+            console.warn('[settings] update promise did not resolve', e);
+          });
         },
         setAdminPassword: async (password) => {
           const adminPasswordHash = hashPin(password);
           set((state) => ({ settings: { ...state.settings, adminPasswordHash } }));
-          await firestoreUpdate(COLLECTION, DOC_ID, { adminPasswordHash });
+          firestoreUpdate(COLLECTION, DOC_ID, { adminPasswordHash }).catch((e) => {
+            console.warn('[settings] setAdminPassword promise did not resolve', e);
+          });
         },
         verifyAdminPassword: (password) => {
           const hash = get().settings.adminPasswordHash;
@@ -79,7 +83,9 @@ export const useSettingsStore = isFirebaseConfigured
         setLeaderPassword: async (password) => {
           const leaderPasswordHash = hashPin(password);
           set((state) => ({ settings: { ...state.settings, leaderPasswordHash } }));
-          await firestoreUpdate(COLLECTION, DOC_ID, { leaderPasswordHash });
+          firestoreUpdate(COLLECTION, DOC_ID, { leaderPasswordHash }).catch((e) => {
+            console.warn('[settings] setLeaderPassword promise did not resolve', e);
+          });
         },
         verifyLeaderPassword: (password) => {
           const hash = get().settings.leaderPasswordHash;
