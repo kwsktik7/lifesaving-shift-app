@@ -63,19 +63,39 @@ export async function firebaseSignIn(session: Session): Promise<void> {
   }
   const uid = user.uid;
 
+  // getIdToken で auth 動作確認
+  try {
+    const t0 = performance.now();
+    const token = await user.getIdToken();
+    console.log('[signIn] getIdToken ok len=' + token.length + ' in', (performance.now() - t0).toFixed(0), 'ms');
+  } catch (e) {
+    console.error('[signIn] getIdToken failed', e);
+  }
+
+  // Firestoreへのセッション書き込み(5秒でタイムアウト→ローカルのみで続行)
   console.log('[signIn] writing sessions/' + uid + '...');
   const t0 = performance.now();
+  const writePromise = setDoc(doc(db, 'sessions', uid), {
+    role: session.role,
+    studentId: session.studentId ?? null,
+    studentName: session.studentName ?? null,
+    createdAt: new Date().toISOString(),
+  });
+  const timeoutPromise = new Promise<void>((_, reject) =>
+    setTimeout(() => reject(new Error('setDoc timeout 5s')), 5000),
+  );
+
   try {
-    await setDoc(doc(db, 'sessions', uid), {
-      role: session.role,
-      studentId: session.studentId ?? null,
-      studentName: session.studentName ?? null,
-      createdAt: new Date().toISOString(),
-    });
+    await Promise.race([writePromise, timeoutPromise]);
     console.log('[signIn] setDoc ok in', (performance.now() - t0).toFixed(0), 'ms');
   } catch (e) {
-    console.error('[signIn] setDoc failed after', (performance.now() - t0).toFixed(0), 'ms', e);
-    throw e;
+    console.warn('[signIn] setDoc fallback (local only) after', (performance.now() - t0).toFixed(0), 'ms', e);
+    // Firestoreに書けなくてもローカルセッションだけで続行
+    // (あとで ensureFirestoreSession が再試行する)
+    writePromise.then(
+      () => console.log('[signIn] late setDoc success'),
+      (err) => console.error('[signIn] late setDoc failed', err),
+    );
   }
 
   setSession(session);
