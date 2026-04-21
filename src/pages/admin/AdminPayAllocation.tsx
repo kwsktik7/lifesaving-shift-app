@@ -3,35 +3,9 @@ import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { format, parseISO } from 'date-fns';
 import { Check, Undo2, Download } from 'lucide-react';
 import { exportAttendanceReport } from '@/utils/export';
-
-/** 月の範囲を取得 */
-function getMonthRanges(seasonStart: string, seasonEnd: string) {
-  const start = parseISO(seasonStart);
-  const end = parseISO(seasonEnd);
-  const months: { label: string; year: number; month: number; startDate: string; endDate: string }[] = [];
-
-  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
-  while (cur <= end) {
-    const y = cur.getFullYear();
-    const m = cur.getMonth();
-    const monthStart = new Date(y, m, 1);
-    const monthEnd = new Date(y, m + 1, 0);
-    const effectiveStart = monthStart < start ? seasonStart : format(monthStart, 'yyyy-MM-dd');
-    const effectiveEnd = monthEnd > end ? seasonEnd : format(monthEnd, 'yyyy-MM-dd');
-    months.push({
-      label: `${y}年${m + 1}月`,
-      year: y,
-      month: m,
-      startDate: effectiveStart,
-      endDate: effectiveEnd,
-    });
-    cur = new Date(y, m + 1, 1);
-  }
-  return months;
-}
+import { getMonthRanges } from '@/utils/monthRanges';
 
 /** 鶴亀算: 予算と延べ人日から1枠・V枠を計算 */
 function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPay: number, minimizeSurplus = false) {

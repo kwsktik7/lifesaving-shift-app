@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { FileSpreadsheet, Table, CalendarDays, Shield, Anchor, Users } from 'lucide-react';
 import ShiftGrid from '@/components/ShiftGrid';
 import { exportShiftScheduleXlsx } from '@/utils/exportShift';
+import { getMonthRanges } from '@/utils/monthRanges';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
@@ -18,15 +19,33 @@ export default function AdminShiftPublish() {
   const [view, setView] = useState<'grid' | 'daily'>('daily');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
+  // 月タブ: 「全期間」+ 各月。indexは0=全期間、1以降が各月
+  const months = useMemo(
+    () => getMonthRanges(settings.seasonStart, settings.seasonEnd),
+    [settings.seasonStart, settings.seasonEnd]
+  );
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState(0); // 0=全期間
+
   const publishedShifts = shifts.filter(
     (s) => s.status === 'published' || s.status === 'attended' || s.status === 'absent'
   );
 
-  const shiftDays = days.filter((d) => d.isOpen && publishedShifts.some((s) => s.date === d.date));
+  // 選択中の月で絞った published shifts / days (Excel出力と日別メンバー両方で使う)
+  const activeMonth = selectedMonthIdx > 0 ? months[selectedMonthIdx - 1] : null;
+  const filteredDays = activeMonth
+    ? days.filter((d) => d.date >= activeMonth.startDate && d.date <= activeMonth.endDate)
+    : days;
+  const filteredShifts = activeMonth
+    ? publishedShifts.filter((s) => s.date >= activeMonth.startDate && s.date <= activeMonth.endDate)
+    : publishedShifts;
 
-  // 日別メンバー用
-  const currentDate = selectedDate || shiftDays[0]?.date || '';
-  const dayShifts = publishedShifts.filter((s) => s.date === currentDate);
+  const shiftDays = filteredDays.filter((d) => d.isOpen && filteredShifts.some((s) => s.date === d.date));
+
+  // 日別メンバー用 (選択月範囲内の日付のみ)
+  const currentDate = selectedDate && shiftDays.some((d) => d.date === selectedDate)
+    ? selectedDate
+    : shiftDays[0]?.date || '';
+  const dayShifts = filteredShifts.filter((s) => s.date === currentDate);
   const dayMembers = dayShifts.map((shift) => {
     const student = students.find((s) => s.id === shift.studentId);
     return { shift, student };
@@ -50,13 +69,46 @@ export default function AdminShiftPublish() {
           </p>
         </div>
         <button
-          onClick={() => exportShiftScheduleXlsx(students, publishedShifts, days, settings.clubName)}
+          onClick={() => exportShiftScheduleXlsx(
+            students,
+            filteredShifts,
+            filteredDays,
+            settings.clubName,
+            activeMonth?.label,
+            activeMonth?.startDate,
+            activeMonth?.endDate,
+          )}
           className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700"
         >
           <FileSpreadsheet size={16} />
-          Excel出力（配布用）
+          {activeMonth ? `${activeMonth.label}をExcel出力` : '全期間をExcel出力'}
         </button>
       </div>
+
+      {/* Month tabs */}
+      {months.length > 0 && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <button
+            onClick={() => { setSelectedMonthIdx(0); setSelectedDate(''); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              selectedMonthIdx === 0 ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            全期間
+          </button>
+          {months.map((m, i) => (
+            <button
+              key={m.label}
+              onClick={() => { setSelectedMonthIdx(i + 1); setSelectedDate(''); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedMonthIdx === i + 1 ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* View toggle */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
@@ -213,9 +265,9 @@ export default function AdminShiftPublish() {
               </span>
             </div>
             <ShiftGrid
-              days={days}
+              days={filteredDays}
               students={students}
-              shifts={publishedShifts}
+              shifts={filteredShifts}
               hidePayType
             />
           </div>

@@ -2,25 +2,35 @@ import * as XLSX from 'xlsx';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { ShiftAssignment, Student, SeasonDay } from '@/types';
+import { sortStudents } from '@/utils/studentSort';
 
 /**
  * シフト表をExcel出力（給与区分なし、シフト割当の有無のみ。勤怠は反映しない）
+ * monthLabel / startDate / endDate を渡すと指定月だけのシートになる。
+ * 列順は 学年 / 役職 / 氏名 / 日付... / 合計。
+ * 並び順は sortStudents と同じ(監視長→副監視長→3→4→2→1→その他)。
  */
 export function exportShiftScheduleXlsx(
   students: Student[],
   shifts: ShiftAssignment[],
   seasonDays: SeasonDay[],
-  clubName: string
+  clubName: string,
+  monthLabel?: string,
+  startDate?: string,
+  endDate?: string,
 ): void {
   const wb = XLSX.utils.book_new();
-  const openDays = seasonDays.filter((d) => d.isOpen).sort((a, b) => a.date.localeCompare(b.date));
+  const allOpenDays = seasonDays.filter((d) => d.isOpen).sort((a, b) => a.date.localeCompare(b.date));
+  const openDays = startDate && endDate
+    ? allOpenDays.filter((d) => d.date >= startDate && d.date <= endDate)
+    : allOpenDays;
   if (openDays.length === 0) return;
 
-  const activeStudents = students.filter((s) => s.isActive);
+  const activeStudents = sortStudents(students.filter((s) => s.isActive));
 
-  // Header rows
-  const header1 = ['氏名', '学年', ...openDays.map((d) => format(parseISO(d.date), 'M/d')), '合計'];
-  const header2 = ['', '', ...openDays.map((d) => format(parseISO(d.date), 'E', { locale: ja })), ''];
+  // Header rows: 学年 / 役職 / 氏名 / 日付... / 合計
+  const header1 = ['学年', '役職', '氏名', ...openDays.map((d) => format(parseISO(d.date), 'M/d')), '合計'];
+  const header2 = ['', '', '', ...openDays.map((d) => format(parseISO(d.date), 'E', { locale: ja })), ''];
 
   const rows = activeStudents.map((student) => {
     let count = 0;
@@ -32,7 +42,7 @@ export function exportShiftScheduleXlsx(
       count++;
       return '○';
     });
-    return [student.name, student.grade || '', ...cells, count];
+    return [student.grade || '', student.role || '', student.name, ...cells, count];
   });
 
   // Per-day totals row
@@ -41,21 +51,25 @@ export function exportShiftScheduleXlsx(
       (s) => s.date === d.date && s.status !== 'cancelled' && s.status !== 'draft'
     ).length;
   });
-  const totalRow = ['合計', '', ...totals.map((t) => t || ''), ''];
+  const totalRow = ['', '', '合計', ...totals.map((t) => t || ''), ''];
 
   const data = [header1, header2, ...rows, totalRow];
   const ws = XLSX.utils.aoa_to_sheet(data);
 
-  // Column widths
   ws['!cols'] = [
-    { wch: 14 }, // 氏名
-    { wch: 5 },  // 学年
+    { wch: 6 },   // 学年
+    { wch: 14 },  // 役職
+    { wch: 14 },  // 氏名
     ...openDays.map(() => ({ wch: 5 })),
-    { wch: 5 },  // 合計
+    { wch: 5 },   // 合計
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'シフト表');
-  XLSX.writeFile(wb, `シフト表_${clubName}.xlsx`);
+  const sheetName = monthLabel ? `シフト表_${monthLabel}` : 'シフト表';
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  const fileName = monthLabel
+    ? `シフト表_${monthLabel}_${clubName}.xlsx`
+    : `シフト表_${clubName}.xlsx`;
+  XLSX.writeFile(wb, fileName);
 }
 
 /**

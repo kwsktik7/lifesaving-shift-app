@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { ShiftAssignment, Student, AppSettings, SeasonDay } from '@/types';
+import { sortStudents } from '@/utils/studentSort';
 
 export function exportAttendanceReport(
   students: Student[],
@@ -30,7 +31,10 @@ export function exportAttendanceReport(
     : shifts;
 
   // 勤怠表 sheet: one row per student, one col per date
+  // 列: 学年 / 役職 / 氏名 / ...日付 / 集計
   const summaryHeaders = [
+    '学年',
+    '役職',
     '氏名',
     ...allDates.map((d) => format(parseISO(d), 'M/d(E)', { locale: ja })),
     '出勤日数',
@@ -39,7 +43,9 @@ export function exportAttendanceReport(
     '給与合計(円)',
   ];
 
-  const summaryRows = students.filter((s) => s.isActive).map((student) => {
+  // 表示順: 監視長→副監視長→3年→4年→2年→1年→その他
+  const orderedStudents = sortStudents(students.filter((s) => s.isActive));
+  const summaryRows = orderedStudents.map((student) => {
     const cells = allDates.map((date) => {
       const shift = filteredShifts.find(
         (s) => s.studentId === student.id && s.date === date && s.status !== 'cancelled' && s.status !== 'draft'
@@ -71,13 +77,15 @@ export function exportAttendanceReport(
       }
     }
 
-    return [student.name, ...cells, attendedFullPay + attendedVPay, attendedFullPay, attendedVPay, totalPay];
+    return [student.grade, student.role, student.name, ...cells, attendedFullPay + attendedVPay, attendedFullPay, attendedVPay, totalPay];
   });
 
   const sheetName = monthLabel ? `勤怠表_${monthLabel}` : '勤怠表';
   const ws = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
   ws['!cols'] = [
-    { wch: 12 },
+    { wch: 6 },   // 学年
+    { wch: 14 },  // 役職
+    { wch: 12 },  // 氏名
     ...allDates.map(() => ({ wch: 7 })),
     { wch: 8 },
     { wch: 6 },
@@ -88,8 +96,8 @@ export function exportAttendanceReport(
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
   // 給与集計 sheet: summary per student (attended only, half-day = 0.5)
-  const payHeaders = ['氏名', '1日数', 'V日数', '合計日数', '給与合計(円)'];
-  const payRows = students.filter((s) => s.isActive).map((student) => {
+  const payHeaders = ['学年', '役職', '氏名', '1日数', 'V日数', '合計日数', '給与合計(円)'];
+  const payRows = orderedStudents.map((student) => {
     const attended = filteredShifts.filter(
       (s) => s.studentId === student.id && s.status === 'attended'
     );
@@ -99,16 +107,16 @@ export function exportAttendanceReport(
       if (s.payType === '1') { pFullPay += mult; pTotalPay += settings.fullPayAmount * mult; }
       else { pVPay += mult; pTotalPay += settings.vPayAmount * mult; }
     }
-    return [student.name, pFullPay, pVPay, pFullPay + pVPay, pTotalPay];
+    return [student.grade, student.role, student.name, pFullPay, pVPay, pFullPay + pVPay, pTotalPay];
   });
 
-  const totalFullPay = payRows.reduce((acc, r) => acc + (r[1] as number), 0);
-  const totalVPay = payRows.reduce((acc, r) => acc + (r[2] as number), 0);
-  const totalPay = payRows.reduce((acc, r) => acc + (r[4] as number), 0);
-  payRows.push(['合計', totalFullPay, totalVPay, totalFullPay + totalVPay, totalPay]);
+  const totalFullPay = payRows.reduce((acc, r) => acc + (r[3] as number), 0);
+  const totalVPay = payRows.reduce((acc, r) => acc + (r[4] as number), 0);
+  const totalPay = payRows.reduce((acc, r) => acc + (r[6] as number), 0);
+  payRows.push(['', '', '合計', totalFullPay, totalVPay, totalFullPay + totalVPay, totalPay]);
 
   const ws2 = XLSX.utils.aoa_to_sheet([payHeaders, ...payRows]);
-  ws2['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 }];
+  ws2['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, ws2, '給与集計');
 
   const fileName = monthLabel
