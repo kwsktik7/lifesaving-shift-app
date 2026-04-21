@@ -29,7 +29,7 @@ export default function AdminShell() {
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-5 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🏄</span>
+            <img src="/pwa-192x192.png" alt="逗子SLSC" width={32} height={32} className="rounded-full object-cover" />
             <div>
               <p className="text-xs font-bold text-gray-800 leading-tight">逗子SLSC</p>
               <p className="text-xs text-gray-400">管理者</p>

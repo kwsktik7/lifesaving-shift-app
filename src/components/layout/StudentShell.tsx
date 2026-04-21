@@ -16,7 +16,7 @@ export default function StudentShell() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🏄</span>
+          <img src="/pwa-192x192.png" alt="逗子SLSC" width={28} height={28} className="rounded-full object-cover" />
           <div>
             <p className="text-sm font-bold text-gray-800">逗子SLSCシフト管理</p>
           </div>
