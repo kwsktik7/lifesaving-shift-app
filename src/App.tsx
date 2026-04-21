@@ -5,7 +5,7 @@ import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useShiftStore } from '@/store/shiftStore';
-import { getSession, onAuthChange, ensureFirestoreSession } from '@/utils/auth';
+import { getSession } from '@/utils/auth';
 import { isFirebaseConfigured } from '@/lib/firebase';
 
 // Auth
@@ -60,20 +60,6 @@ export default function App() {
       initSeason(settings.seasonStart, settings.seasonEnd);
     }
   }, [settings.seasonStart, settings.seasonEnd, initSeason, settingsReady, seasonReady]);
-
-  // Firebase Auth状態の変化を監視し、session docを常に整合状態に保つ。
-  // ブラウザ再起動でauth.uidは復元されるが、sessions/{uid} docが失われている
-  // 場合があり、これがFirestoreルールのisAdmin()を常にfalseにする原因だった。
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    const unsub = onAuthChange((user) => {
-      if (user) {
-        // 既存のlocalSession (sessionStorage) と一致するsession docを再作成
-        ensureFirestoreSession();
-      }
-    });
-    return unsub;
-  }, []);
 
   // Firebase有効時: settings と season だけ待つ(ログイン画面に必要な最小限)
   // 他の大きなコレクションは各ページ内で遅延ロードされる

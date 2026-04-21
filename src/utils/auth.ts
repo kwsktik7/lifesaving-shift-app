@@ -44,65 +44,21 @@ export function clearSession(): void {
 
 // --- Firebase Auth ---
 
-/** Firebase Anonymous Auth でサインイン + セッションをFirestoreに書き込み */
+/** Firebase Anonymous Auth でサインイン (Firestoreへのセッション書き込みは廃止) */
 export async function firebaseSignIn(session: Session): Promise<void> {
-  console.log('[signIn] start', session);
-  if (!isFirebaseConfigured || !auth || !db) {
+  if (!isFirebaseConfigured || !auth) {
     setSession(session);
-    console.log('[signIn] firebase not configured, local only');
     return;
   }
-
-  console.log('[signIn] auth.currentUser =', auth.currentUser?.uid);
-  let user = auth.currentUser;
-  if (!user) {
-    console.log('[signIn] signing in anonymously...');
-    const cred = await signInAnonymously(auth);
-    user = cred.user;
-    console.log('[signIn] anon signed in', user.uid);
+  // 匿名認証確保 (Firestoreアクセスに必要)
+  if (!auth.currentUser) {
+    await signInAnonymously(auth);
   }
-  const uid = user.uid;
-
-  // getIdToken で auth 動作確認
-  try {
-    const t0 = performance.now();
-    const token = await user.getIdToken();
-    console.log('[signIn] getIdToken ok len=' + token.length + ' in', (performance.now() - t0).toFixed(0), 'ms');
-  } catch (e) {
-    console.error('[signIn] getIdToken failed', e);
-  }
-
-  // Firestoreへのセッション書き込み(5秒でタイムアウト→ローカルのみで続行)
-  console.log('[signIn] writing sessions/' + uid + '...');
-  const t0 = performance.now();
-  const writePromise = setDoc(doc(db, 'sessions', uid), {
-    role: session.role,
-    studentId: session.studentId ?? null,
-    studentName: session.studentName ?? null,
-    createdAt: new Date().toISOString(),
-  });
-  const timeoutPromise = new Promise<void>((_, reject) =>
-    setTimeout(() => reject(new Error('setDoc timeout 5s')), 5000),
-  );
-
-  try {
-    await Promise.race([writePromise, timeoutPromise]);
-    console.log('[signIn] setDoc ok in', (performance.now() - t0).toFixed(0), 'ms');
-  } catch (e) {
-    console.warn('[signIn] setDoc fallback (local only) after', (performance.now() - t0).toFixed(0), 'ms', e);
-    // Firestoreに書けなくてもローカルセッションだけで続行
-    // (あとで ensureFirestoreSession が再試行する)
-    writePromise.then(
-      () => console.log('[signIn] late setDoc success'),
-      (err) => console.error('[signIn] late setDoc failed', err),
-    );
-  }
-
+  // セッションはローカル(sessionStorage)のみで管理
   setSession(session);
-  console.log('[signIn] done');
 }
 
-/** 匿名ログインを確実に実行して auth.uid を返す（セッションdocは作らない） */
+/** 匿名ログインを確実に実行して auth.uid を返す */
 export async function ensureAnonAuth(): Promise<string | null> {
   if (!isFirebaseConfigured || !auth) return null;
   if (auth.currentUser) return auth.currentUser.uid;
@@ -110,25 +66,9 @@ export async function ensureAnonAuth(): Promise<string | null> {
   return cred.user.uid;
 }
 
-/** 現在のauth.uidに対してsession docを再作成（整合性回復用） */
+/** 互換性のためのno-op（旧コードから参照される場合の保護） */
 export async function ensureFirestoreSession(): Promise<boolean> {
-  if (!isFirebaseConfigured || !auth || !db) return false;
-  const user = auth.currentUser;
-  if (!user) return false;
-  const local = getSession();
-  if (!local) return false;
-  try {
-    await setDoc(doc(db, 'sessions', user.uid), {
-      role: local.role,
-      studentId: local.studentId ?? null,
-      studentName: local.studentName ?? null,
-      createdAt: new Date().toISOString(),
-    });
-    return true;
-  } catch (e) {
-    console.error('[auth] ensureFirestoreSession failed', e);
-    return false;
-  }
+  return false;
 }
 
 /** サインアウト */
