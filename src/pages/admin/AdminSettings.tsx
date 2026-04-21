@@ -6,6 +6,8 @@ import { useAvailabilityStore } from '@/store/availabilityStore';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
+import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -169,6 +171,57 @@ export default function AdminSettings() {
   ];
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleLeader, setNewRoleLeader] = useState(false);
+
+  // 新シーズン開始: 全学生/全シフト/全可否/全seasonDays/月別予算/配分済月を削除。
+  // 設定(クラブ名/シーズン期間/時給/パスワード/役職リスト)は保持。
+  const [resetting, setResetting] = useState(false);
+  async function resetSeason() {
+    if (!db) return;
+    if (!confirm('学生・シフト・可否・月別予算など、シーズン関連データをすべて削除します。設定と役職は残ります。続行しますか?')) return;
+    if (!confirm('本当に削除していいですか? この操作は取り消せません。')) return;
+    setResetting(true);
+    try {
+      // 全コレクション取得
+      const [studentsSnap, shiftsSnap, availSnap, seasonDaysSnap] = await Promise.all([
+        getDocs(collection(db, 'students')),
+        getDocs(collection(db, 'shifts')),
+        getDocs(collection(db, 'availability')),
+        getDocs(collection(db, 'seasonDays')),
+      ]);
+      // Firestoreのwrite batchは500件まで → 分割
+      const allDocs = [
+        ...studentsSnap.docs,
+        ...shiftsSnap.docs,
+        ...availSnap.docs,
+        ...seasonDaysSnap.docs,
+      ];
+      for (let i = 0; i < allDocs.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const d of allDocs.slice(i, i + 450)) batch.delete(d.ref);
+        await batch.commit();
+      }
+      // 設定のクリア対象フィールド
+      await updateSettings({
+        monthlyBudgets: {},
+        allocatedMonths: [],
+        availabilityLocked: false,
+      });
+      // 直接 settings docを書き換えて allocatedMonths/monthlyBudgets を確実に空に
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'settings', 'main'), {
+        monthlyBudgets: {},
+        allocatedMonths: [],
+        availabilityLocked: false,
+      });
+      await batch.commit();
+      setSuccessMsg(`削除完了: 学生${studentsSnap.size}/シフト${shiftsSnap.size}/可否${availSnap.size}/日${seasonDaysSnap.size}件。ページを再読込します`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`シーズンリセット失敗: ${msg}`);
+      setResetting(false);
+    }
+  }
   // ドラッグ並び替え: 掴んでる行のインデックスと、ドラッグ中にホバーしてる挿入位置
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -684,6 +737,23 @@ export default function AdminSettings() {
         </div>
       </section>
 
+      {/* Danger zone */}
+      <section>
+        <h2 className="text-base font-semibold text-red-700 mb-2">新シーズン開始</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          学生・シフト・可否・月別予算・配分記録などシーズン関連データを全削除して、まっさらな状態から新シーズンを始めます。設定(クラブ名/期間/時給/パスワード/役職リスト)は残ります。
+        </p>
+        <div className="bg-white rounded-xl border border-red-300 p-4">
+          <button
+            onClick={resetSeason}
+            disabled={resetting}
+            className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            {resetting ? 'リセット中...' : 'シーズンデータを全削除して新シーズン開始'}
+          </button>
+        </div>
+      </section>
 
       {/* 学生削除モーダル */}
       {deleteTarget && (
