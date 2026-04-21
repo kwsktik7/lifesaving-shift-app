@@ -4,6 +4,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { exportAllData, importAllData } from '@/utils/export';
+import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { Trash2, Download, Upload, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 
@@ -83,12 +84,6 @@ export default function AdminSettings() {
       setDeleting(false);
     }
   }
-
-  const GRADE_OPTIONS = ['1年', '2年', '3年', '4年'];
-  const gradeOrder = (g: string) => {
-    const i = GRADE_OPTIONS.indexOf(g);
-    return i === -1 ? 99 : i;
-  };
 
   function startEditStudent(id: string, grade: string, role: string) {
     setEditingStudentId(id);
@@ -611,13 +606,7 @@ export default function AdminSettings() {
           {students.length === 0 ? (
             <p className="px-4 py-6 text-center text-gray-400 text-sm">学生が登録されていません</p>
           ) : (
-            [...students]
-              .sort((a, b) => {
-                const ga = gradeOrder(a.grade);
-                const gb = gradeOrder(b.grade);
-                if (ga !== gb) return ga - gb;
-                return (a.nameKana || a.name).localeCompare(b.nameKana || b.name, 'ja');
-              })
+            sortStudents(students)
               .map((student) => {
                 const isEditing = editingStudentId === student.id;
                 const submitted = (submitCountByStudent.get(student.id) ?? 0) > 0;

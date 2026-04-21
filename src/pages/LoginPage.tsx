@@ -4,6 +4,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { firebaseSignIn, verifyPin, ensureAnonAuth } from '@/utils/auth';
+import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { db } from '@/lib/firebase';
 
 /** 名前の表記揺れ吸収: 全角/半角スペース除去 */
@@ -12,8 +13,6 @@ function normalizeName(s: string): string {
 }
 
 type StudentMode = 'login' | 'signup';
-
-const GRADE_OPTIONS = ['1年', '2年', '3年', '4年'];
 
 /** 役職リストが未設定の場合のフォールバック */
 const DEFAULT_ROLES: { name: string; isLeader: boolean }[] = [
@@ -48,18 +47,7 @@ export default function LoginPage() {
   const roleOptions = (settings.roles && settings.roles.length > 0) ? settings.roles : DEFAULT_ROLES;
   const selectedRoleDef = roleOptions.find((r) => r.name === signupRole);
 
-  const activeStudents = students
-    .filter((s) => s.isActive)
-    .sort((a, b) => {
-      // 学年の数字を抽出してソート（数字が大きい=上級生を先に）
-      const gradeNum = (g: string) => {
-        const m = g.match(/(\d+)/);
-        return m ? parseInt(m[1], 10) : 0;
-      };
-      const diff = gradeNum(b.grade) - gradeNum(a.grade);
-      if (diff !== 0) return diff;
-      return a.name.localeCompare(b.name, 'ja');
-    });
+  const activeStudents = sortStudents(students.filter((s) => s.isActive));
 
   const [loading, setLoading] = useState(false);
 
