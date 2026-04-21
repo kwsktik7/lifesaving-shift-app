@@ -34,7 +34,8 @@ export default function LoginPage() {
   const [signupName, setSignupName] = useState('');
   const [signupGrade, setSignupGrade] = useState('1年');
   const [signupHasPwc, setSignupHasPwc] = useState(false);
-  const [signupRole, setSignupRole] = useState('ガード');
+  // 役職は初期値なし。本人が選択する。
+  const [signupRole, setSignupRole] = useState('');
   const [signupLeaderPass, setSignupLeaderPass] = useState('');
   const [signupMonth, setSignupMonth] = useState('');
   const [signupDay, setSignupDay] = useState('');
@@ -90,6 +91,7 @@ export default function LoginPage() {
     setError('');
     const name = signupName.trim();
     if (!name) { setError('名前を入力してください'); return; }
+    if (!signupRole) { setError('役職を選択してください'); return; }
     const m = Number(signupMonth);
     const d = Number(signupDay);
     if (!Number.isInteger(m) || m < 1 || m > 12) { setError('誕生月は1〜12で入力してください'); return; }
@@ -293,6 +295,7 @@ export default function LoginPage() {
                   value={signupRole}
                   onChange={(e) => { setSignupRole(e.target.value); setSignupLeaderPass(''); setError(''); }}
                 >
+                  <option value="">-- 選択してください --</option>
                   {roleOptions.map((r) => (
                     <option key={r.name} value={r.name}>
                       {r.name}{r.isLeader ? '（要パスワード）' : ''}
