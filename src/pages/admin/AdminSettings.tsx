@@ -7,7 +7,7 @@ import { exportAllData, importAllData } from '@/utils/export';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { Trash2, Download, Upload, Pencil, Check, X, GripVertical, Wand2 } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
-import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
