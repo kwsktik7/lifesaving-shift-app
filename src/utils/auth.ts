@@ -46,29 +46,40 @@ export function clearSession(): void {
 
 /** Firebase Anonymous Auth でサインイン + セッションをFirestoreに書き込み */
 export async function firebaseSignIn(session: Session): Promise<void> {
+  console.log('[signIn] start', session);
   if (!isFirebaseConfigured || !auth || !db) {
-    // Firebase未設定時はsessionStorageのみ
     setSession(session);
+    console.log('[signIn] firebase not configured, local only');
     return;
   }
 
-  // 既存の匿名ユーザーがあれば再利用（IndexedDBで永続化されている場合）
+  console.log('[signIn] auth.currentUser =', auth.currentUser?.uid);
   let user = auth.currentUser;
   if (!user) {
+    console.log('[signIn] signing in anonymously...');
     const cred = await signInAnonymously(auth);
     user = cred.user;
+    console.log('[signIn] anon signed in', user.uid);
   }
   const uid = user.uid;
 
-  // Firestoreにセッション書き込み（セキュリティルールで使用）
-  await setDoc(doc(db, 'sessions', uid), {
-    role: session.role,
-    studentId: session.studentId ?? null,
-    studentName: session.studentName ?? null,
-    createdAt: new Date().toISOString(),
-  });
+  console.log('[signIn] writing sessions/' + uid + '...');
+  const t0 = performance.now();
+  try {
+    await setDoc(doc(db, 'sessions', uid), {
+      role: session.role,
+      studentId: session.studentId ?? null,
+      studentName: session.studentName ?? null,
+      createdAt: new Date().toISOString(),
+    });
+    console.log('[signIn] setDoc ok in', (performance.now() - t0).toFixed(0), 'ms');
+  } catch (e) {
+    console.error('[signIn] setDoc failed after', (performance.now() - t0).toFixed(0), 'ms', e);
+    throw e;
+  }
 
   setSession(session);
+  console.log('[signIn] done');
 }
 
 /** 匿名ログインを確実に実行して auth.uid を返す（セッションdocは作らない） */
