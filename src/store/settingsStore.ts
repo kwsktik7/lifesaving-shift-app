@@ -8,7 +8,7 @@ interface SettingsState {
   settings: AppSettings;
   _ready: boolean;
   updateSettings: (patch: Partial<Omit<AppSettings, 'adminPasswordHash' | 'leaderPasswordHash'>>) => Promise<void>;
-  setAdminPassword: (password: string) => void;
+  setAdminPassword: (password: string) => Promise<void>;
   verifyAdminPassword: (password: string) => boolean;
   setLeaderPassword: (password: string) => Promise<void>;
   verifyLeaderPassword: (password: string) => boolean;
@@ -34,9 +34,6 @@ const DOC_ID = 'main';
 // Firestore無効時: localStorage persist（従来動作）
 export const useSettingsStore = isFirebaseConfigured
   ? create<SettingsState>()((set, get) => {
-      // 進行中の書き込みパッチ（古いスナップショットによるロールバック防止用）
-      let pendingPatch: Partial<AppSettings> | null = null;
-
       // Firestoreリスナー開始
       subscribeDoc(
         COLLECTION,
@@ -44,24 +41,13 @@ export const useSettingsStore = isFirebaseConfigured
         (data) => data as AppSettings,
         (settings) => {
           // 既存ドキュメントにフィールドが存在しない場合のフォールバック
-          const base: AppSettings = {
+          const merged: AppSettings = {
+            ...DEFAULT_SETTINGS,
             ...settings,
             monthlyBudgets: settings.monthlyBudgets ?? {},
             allocatedMonths: settings.allocatedMonths ?? [],
             availabilityLocked: settings.availabilityLocked ?? false,
           };
-          // 書き込み中のpatchがあれば、スナップショットに上書きマージ
-          // （Firestoreのローカルキャッシュが古い値で発火するレースを防ぐ）
-          const merged: AppSettings = pendingPatch
-            ? {
-                ...base,
-                ...pendingPatch,
-                monthlyBudgets: {
-                  ...(base.monthlyBudgets ?? {}),
-                  ...(pendingPatch.monthlyBudgets ?? {}),
-                },
-              }
-            : base;
           set({ settings: merged, _ready: true });
         },
         () => {
@@ -75,40 +61,15 @@ export const useSettingsStore = isFirebaseConfigured
         settings: DEFAULT_SETTINGS,
         _ready: false,
         updateSettings: async (patch) => {
-          // pendingにマージ（複数の連続更新にも対応）
-          pendingPatch = {
-            ...(pendingPatch ?? {}),
-            ...patch,
-            monthlyBudgets: {
-              ...(pendingPatch?.monthlyBudgets ?? {}),
-              ...(patch.monthlyBudgets ?? {}),
-            },
-          };
-          const merged = { ...get().settings, ...patch };
-          set({ settings: merged });
-          let writeError: unknown = null;
-          try {
-            // setDoc(全置換)ではなくupdateDoc(部分更新)を使う：他フィールドを上書きせず、
-            // スナップショット競合も最小化される。
-            await firestoreUpdate(COLLECTION, DOC_ID, patch as Record<string, unknown>);
-          } catch (e) {
-            console.error('[settings] update failed', e);
-            writeError = e;
-            // 失敗時もpendingPatchは保持: ロールバックスナップショットで上書きされないように
-          }
-          // 成功・失敗に関わらず、遅延クリア:
-          // Firestoreの確定/ロールバックスナップショットはpromise解決後に発火することがあるため、
-          // pendingPatchを少し保持して上書きを防ぐ。
-          setTimeout(() => {
-            pendingPatch = null;
-          }, 1500);
-          // 呼び出し側がエラーを検知できるように再スロー
-          if (writeError) throw writeError;
+          // 楽観更新
+          set({ settings: { ...get().settings, ...patch } });
+          // Firestore部分更新 (updateDocなので他フィールド維持)
+          await firestoreUpdate(COLLECTION, DOC_ID, patch as Record<string, unknown>);
         },
         setAdminPassword: async (password) => {
-          const merged = { ...get().settings, adminPasswordHash: hashPin(password) };
-          set({ settings: merged });
-          await firestoreSet(COLLECTION, DOC_ID, merged);
+          const adminPasswordHash = hashPin(password);
+          set((state) => ({ settings: { ...state.settings, adminPasswordHash } }));
+          await firestoreUpdate(COLLECTION, DOC_ID, { adminPasswordHash });
         },
         verifyAdminPassword: (password) => {
           const hash = get().settings.adminPasswordHash;
@@ -135,10 +96,11 @@ export const useSettingsStore = isFirebaseConfigured
           updateSettings: async (patch) => {
             set((state) => ({ settings: { ...state.settings, ...patch } }));
           },
-          setAdminPassword: (password) =>
+          setAdminPassword: async (password) => {
             set((state) => ({
               settings: { ...state.settings, adminPasswordHash: hashPin(password) },
-            })),
+            }));
+          },
           verifyAdminPassword: (password) => {
             const hash = get().settings.adminPasswordHash;
             if (!hash) return true;

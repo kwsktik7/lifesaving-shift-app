@@ -119,19 +119,17 @@ export default function AdminSettings() {
     [settings.seasonStart, settings.seasonEnd]
   );
 
-  // 編集中の月キー集合 + 入力下書き値
-  const [editingBudgets, setEditingBudgets] = useState<Set<string>>(new Set());
+  // 各月の入力下書き (空文字 = 未変更で settings の値を使う)
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({});
+  // 直近で保存成功した月キー (✓表示用)
+  const [justSavedBudget, setJustSavedBudget] = useState<Set<string>>(new Set());
+  // 保存中の月キー
+  const [savingBudget, setSavingBudget] = useState<Set<string>>(new Set());
 
-  function startEditBudget(key: string) {
+  function budgetDisplay(key: string): string {
+    if (key in budgetDrafts) return budgetDrafts[key];
     const v = settings.monthlyBudgets?.[key];
-    setBudgetDrafts((d) => ({ ...d, [key]: v && v > 0 ? String(v) : '' }));
-    setEditingBudgets((s) => { const next = new Set(s); next.add(key); return next; });
-  }
-
-  function cancelEditBudget(key: string) {
-    setBudgetDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
-    setEditingBudgets((s) => { const next = new Set(s); next.delete(key); return next; });
+    return v && v > 0 ? String(v) : '';
   }
 
   function handleBudgetInput(key: string, value: string) {
@@ -139,27 +137,67 @@ export default function AdminSettings() {
   }
 
   async function saveBudget(key: string) {
-    const draft = budgetDrafts[key] ?? '';
-    const num = draft === '' ? 0 : Number(draft);
+    const draft = budgetDrafts[key];
+    const num = !draft ? 0 : Number(draft);
     if (Number.isNaN(num) || num < 0) {
-      setSuccessMsg('');
+      setErrorMsg(`${key} の金額が不正です`);
       return;
     }
-    // 最新のストア状態から読む（closureの古い値を避ける）
     const latest = useSettingsStore.getState().settings.monthlyBudgets ?? {};
     const nextBudgets = { ...latest, [key]: num };
+    setSavingBudget((s) => new Set(s).add(key));
     try {
       await updateSettings({ monthlyBudgets: nextBudgets });
       setBudgetDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
-      setEditingBudgets((s) => { const next = new Set(s); next.delete(key); return next; });
+      setJustSavedBudget((s) => new Set(s).add(key));
+      setTimeout(() => {
+        setJustSavedBudget((s) => { const next = new Set(s); next.delete(key); return next; });
+      }, 2500);
       setErrorMsg('');
-      setSuccessMsg('月別予算を保存しました');
-      setTimeout(() => setSuccessMsg(''), 2000);
     } catch (e) {
       console.error('[AdminSettings] saveBudget failed', e);
       const msg = e instanceof Error ? e.message : String(e);
-      setSuccessMsg('');
       setErrorMsg(`保存に失敗しました: ${msg}`);
+    } finally {
+      setSavingBudget((s) => { const next = new Set(s); next.delete(key); return next; });
+    }
+  }
+
+  // パスワード変更状態
+  const [savingAdminPw, setSavingAdminPw] = useState(false);
+  const [savingLeaderPw, setSavingLeaderPw] = useState(false);
+
+  async function handleSetAdminPassword() {
+    if (!newAdminPass) return;
+    setSavingAdminPw(true);
+    try {
+      await setAdminPassword(newAdminPass);
+      setNewAdminPass('');
+      setSuccessMsg('管理者パスワードを変更しました');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setErrorMsg('');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`保存に失敗しました: ${msg}`);
+    } finally {
+      setSavingAdminPw(false);
+    }
+  }
+
+  async function handleSetLeaderPassword() {
+    if (!newLeaderPass) return;
+    setSavingLeaderPw(true);
+    try {
+      await setLeaderPassword(newLeaderPass);
+      setNewLeaderPass('');
+      setSuccessMsg('監視長パスワードを変更しました');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setErrorMsg('');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`保存に失敗しました: ${msg}`);
+    } finally {
+      setSavingLeaderPw(false);
     }
   }
 
@@ -263,68 +301,53 @@ export default function AdminSettings() {
       {/* Monthly budgets */}
       <section>
         <h2 className="text-base font-semibold text-gray-700 mb-2">月別予算</h2>
-        <p className="text-xs text-gray-500 mb-4">市役所から提示される月ごとの予算を入力してください。給与配分（1/V）はこの金額をもとに鶴亀算で計算されます。</p>
+        <p className="text-xs text-gray-500 mb-4">
+          市役所から提示される月ごとの予算を入力し、各行の「保存」ボタンで確定してください。
+        </p>
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           {monthKeys.length === 0 ? (
             <p className="text-sm text-gray-400">シーズン開始日・終了日を先に設定してください。</p>
           ) : (
             monthKeys.map((m) => {
-              const isEditing = editingBudgets.has(m.key);
+              const displayValue = budgetDisplay(m.key);
               const stored = settings.monthlyBudgets?.[m.key] ?? 0;
+              const draft = budgetDrafts[m.key];
+              const hasChange = draft !== undefined && Number(draft || 0) !== stored;
+              const isSaving = savingBudget.has(m.key);
+              const justSaved = justSavedBudget.has(m.key);
               return (
-                <div key={m.key} className="flex items-center gap-3">
-                  <label className="text-sm font-medium text-gray-700 w-28">{m.label}</label>
-                  {isEditing ? (
-                    <>
-                      <div className="relative flex-1">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">¥</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          step={1000}
-                          placeholder="0"
-                          autoFocus
-                          className="border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={budgetDrafts[m.key] ?? ''}
-                          onChange={(e) => handleBudgetInput(m.key, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveBudget(m.key);
-                            if (e.key === 'Escape') cancelEditBudget(m.key);
-                          }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => saveBudget(m.key)}
-                        className="flex items-center gap-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        <Check size={14} />
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cancelEditBudget(m.key)}
-                        className="flex items-center gap-1 border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
-                      >
-                        <X size={14} />
-                        取消
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex-1 px-3 py-2 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg">
-                        {stored > 0 ? `¥${stored.toLocaleString()}` : <span className="text-gray-400">未設定</span>}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => startEditBudget(m.key)}
-                        className="flex items-center gap-1 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
-                      >
-                        <Pencil size={14} />
-                        変更
-                      </button>
-                    </>
+                <div key={m.key} className="flex items-center gap-3 flex-wrap">
+                  <label className="text-sm font-medium text-gray-700 w-24">{m.label}</label>
+                  <div className="relative flex-1 min-w-[180px]">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">¥</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1000}
+                      placeholder="0"
+                      className="border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={displayValue}
+                      onChange={(e) => handleBudgetInput(m.key, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveBudget(m.key); }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => saveBudget(m.key)}
+                    disabled={isSaving || !hasChange}
+                    className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      hasChange && !isSaving
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {isSaving ? '保存中...' : '保存'}
+                  </button>
+                  {justSaved && (
+                    <span className="flex items-center gap-1 text-green-600 text-xs font-medium">
+                      <Check size={14} /> 保存済み
+                    </span>
                   )}
                 </div>
               );
@@ -335,21 +358,32 @@ export default function AdminSettings() {
 
       {/* Admin password */}
       <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-4">管理者パスワード変更</h2>
+        <h2 className="text-base font-semibold text-gray-700 mb-2">管理者パスワード変更</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          現在: {settings.adminPasswordHash
+            ? <span className="text-green-700 font-medium">設定済み</span>
+            : <span className="text-red-600 font-medium">未設定</span>}
+        </p>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <input
               type="password"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="新しいパスワード"
               value={newAdminPass}
               onChange={(e) => setNewAdminPass(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSetAdminPassword(); }}
             />
             <button
-              onClick={() => { setAdminPassword(newAdminPass); setNewAdminPass(''); setSuccessMsg('パスワードを変更しました'); setTimeout(() => setSuccessMsg(''), 2000); }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              onClick={handleSetAdminPassword}
+              disabled={savingAdminPw || !newAdminPass}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !savingAdminPw && newAdminPass
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
             >
-              変更
+              {savingAdminPw ? '保存中...' : '保存'}
             </button>
           </div>
         </div>
@@ -357,39 +391,33 @@ export default function AdminSettings() {
 
       {/* Leader password */}
       <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-4">監視長パスワード変更</h2>
+        <h2 className="text-base font-semibold text-gray-700 mb-2">監視長パスワード変更</h2>
         <p className="text-xs text-gray-500 mb-3">
-          新規アカウント作成で「監視長」「副監視長」を選択する時に要求されるパスワードです。
-          {settings.leaderPasswordHash ? '' : ' 未設定の場合は誰も監視長/副監視長として登録できません。'}
+          新規アカウント作成で「監視長」「副監視長」を選択する時に要求されるパスワード。
+          現在: {settings.leaderPasswordHash
+            ? <span className="text-green-700 font-medium">設定済み</span>
+            : <span className="text-red-600 font-medium">未設定</span>}
         </p>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <input
               type="password"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={settings.leaderPasswordHash ? '新しい監視長パスワード' : '監視長パスワードを設定'}
               value={newLeaderPass}
               onChange={(e) => setNewLeaderPass(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSetLeaderPassword(); }}
             />
             <button
-              onClick={async () => {
-                if (!newLeaderPass) return;
-                try {
-                  await setLeaderPassword(newLeaderPass);
-                  setNewLeaderPass('');
-                  setErrorMsg('');
-                  setSuccessMsg('監視長パスワードを変更しました');
-                  setTimeout(() => setSuccessMsg(''), 2000);
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  setSuccessMsg('');
-                  setErrorMsg(`保存に失敗しました: ${msg}`);
-                }
-              }}
-              disabled={!newLeaderPass}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+              onClick={handleSetLeaderPassword}
+              disabled={savingLeaderPw || !newLeaderPass}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !savingLeaderPw && newLeaderPass
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
             >
-              変更
+              {savingLeaderPw ? '保存中...' : '保存'}
             </button>
           </div>
         </div>
