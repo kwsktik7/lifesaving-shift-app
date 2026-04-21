@@ -3,7 +3,6 @@ import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useShiftStore } from '@/store/shiftStore';
-import { useSettingsStore } from '@/store/settingsStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Check, X, Plus } from 'lucide-react';
@@ -15,7 +14,6 @@ export default function AdminShiftEdit() {
   const { students } = useStudentStore();
   const { availabilities } = useAvailabilityStore();
   const { shifts, assignShift, removeShift, publishDay, getShiftsForDate } = useShiftStore();
-  const { settings } = useSettingsStore();
 
   const openDays = days.filter((d) => d.isOpen);
   const [selectedDate, setSelectedDate] = useState<string>(openDays[0]?.date ?? '');
@@ -49,33 +47,9 @@ export default function AdminShiftEdit() {
 
   const draftCount = dayShifts.filter((s) => s.status === 'draft').length;
 
-  // シーズン全体のサマリー（月別予算の合計 + 延べ出勤人数）
-  const seasonSummary = useMemo(() => {
-    const totalBudget = Object.values(settings.monthlyBudgets ?? {}).reduce((acc, v) => acc + (v || 0), 0);
-    const totalPersonDays = shifts.filter((s) => s.status !== 'cancelled' && s.status !== 'draft').length;
-    return { totalBudget, totalPersonDays };
-  }, [shifts, settings.monthlyBudgets]);
-
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">シフト作成</h1>
-
-      {/* ── シーズン予算サマリー ── */}
-      <div className="rounded-xl border p-4 bg-blue-50 border-blue-200">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="text-xs font-medium text-gray-500">シーズン予算（月別合計）</p>
-            <p className="text-sm font-bold text-gray-800">¥{seasonSummary.totalBudget.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-gray-500">延べ出勤（シフト確定分）</p>
-            <p className="text-sm font-bold text-gray-800">{seasonSummary.totalPersonDays}人日</p>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">
-          ※ 1/V の配分は「給与配分」ページで月単位に計算されます
-        </p>
-      </div>
 
       {/* ── カレンダーグリッド（クリックで日付選択） ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
