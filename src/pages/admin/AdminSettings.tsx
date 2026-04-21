@@ -3,12 +3,9 @@ import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
-import { exportAllData, importAllData } from '@/utils/export';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
-import { Trash2, Download, Upload, Pencil, Check, X, GripVertical, Wand2 } from 'lucide-react';
+import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
-import { collection, getDocs, writeBatch } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -265,72 +262,6 @@ export default function AdminSettings() {
     } finally {
       setSavingLeaderPw(false);
     }
-  }
-
-  // orphan 一掃: 今いる学生の id セットに含まれない shifts / availability を削除。
-  // 過去に cascade delete なしで学生を消した時のゴミデータを片付けるための一時ツール。
-  const [cleaningOrphans, setCleaningOrphans] = useState(false);
-  async function cleanupOrphans() {
-    if (!db) return;
-    if (!confirm('今いる学生に紐付かないシフト・可否データを全て削除します。よろしいですか？')) return;
-    setCleaningOrphans(true);
-    try {
-      const activeIds = new Set(students.map((s) => s.id));
-      const [shiftsSnap, availSnap] = await Promise.all([
-        getDocs(collection(db, 'shifts')),
-        getDocs(collection(db, 'availability')),
-      ]);
-      const orphanShifts = shiftsSnap.docs.filter((d) => {
-        const sid = (d.data() as { studentId?: string }).studentId;
-        return !sid || !activeIds.has(sid);
-      });
-      const orphanAvail = availSnap.docs.filter((d) => {
-        const sid = (d.data() as { studentId?: string }).studentId;
-        return !sid || !activeIds.has(sid);
-      });
-      if (orphanShifts.length === 0 && orphanAvail.length === 0) {
-        setSuccessMsg('orphanデータはありませんでした');
-        setTimeout(() => setSuccessMsg(''), 2500);
-        return;
-      }
-      const batch = writeBatch(db);
-      orphanShifts.forEach((d) => batch.delete(d.ref));
-      orphanAvail.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      setSuccessMsg(`orphan shifts ${orphanShifts.length}件 / availability ${orphanAvail.length}件 を削除しました`);
-      setTimeout(() => setSuccessMsg(''), 3500);
-      setErrorMsg('');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`orphan削除に失敗: ${msg}`);
-    } finally {
-      setCleaningOrphans(false);
-    }
-  }
-
-  function handleExport() {
-    const json = exportAllData();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `zushi_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        importAllData(ev.target?.result as string);
-      } catch {
-        alert('ファイルの読み込みに失敗しました');
-      }
-    };
-    reader.readAsText(file);
   }
 
   return (
@@ -753,33 +684,6 @@ export default function AdminSettings() {
         </div>
       </section>
 
-      {/* Data backup */}
-      <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-4">データ管理</h2>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 flex gap-3 flex-wrap">
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
-          >
-            <Download size={16} />
-            バックアップ（JSON）
-          </button>
-          <label className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
-            <Upload size={16} />
-            データ復元
-            <input type="file" accept=".json" className="hidden" onChange={handleImport} />
-          </label>
-          <button
-            onClick={cleanupOrphans}
-            disabled={cleaningOrphans}
-            className="flex items-center gap-2 border border-amber-300 text-amber-700 px-4 py-2 rounded-lg text-sm hover:bg-amber-50 transition-colors disabled:opacity-50"
-            title="今いる学生に紐付かないshift/availabilityを削除"
-          >
-            <Wand2 size={16} />
-            {cleaningOrphans ? 'クリーンアップ中...' : '孤立データを一掃'}
-          </button>
-        </div>
-      </section>
 
       {/* 学生削除モーダル */}
       {deleteTarget && (
