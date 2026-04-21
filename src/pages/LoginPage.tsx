@@ -62,8 +62,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (!settings.adminPasswordHash) {
-        setAdminPassword(adminPass);
+        // 先に session doc を作成 (adminロール確立) → その後 settings 書き込み
         await firebaseSignIn({ role: 'admin' });
+        setAdminPassword(adminPass);
         navigate('/admin');
         return;
       }
