@@ -35,7 +35,9 @@ function getMonthRanges(seasonStart: string, seasonEnd: string) {
 
 /** 鶴亀算: 予算と延べ人日から1枠・V枠を計算 */
 function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPay: number, minimizeSurplus = false) {
-  if (totalPersonDays === 0) return { fullSlots: 0, vSlots: 0, surplus: 0 };
+  // 配分対象の人日がない場合、予算全額が余剰(翌月繰越)となる。
+  // ここで surplus:0 を返すと、強制V分以外の予算が消えてしまうので必ず budget を返す。
+  if (totalPersonDays === 0) return { fullSlots: 0, vSlots: 0, surplus: budget };
   const diff = fullPay - vPay;
   let fullSlots = Math.max(0, Math.min(totalPersonDays, Math.floor((budget - totalPersonDays * vPay) / diff)));
   // 最終月など余剰を最小化したい場合、1枠を1つ増やして余剰が0以上ならそちらを採用
