@@ -173,7 +173,7 @@ export default function AdminPayAllocation() {
       surplusMap.set(i, calc.surplus);
     }
     return surplusMap;
-  }, [months, days, shifts, settings]);
+  }, [months, days, shifts, settings, activeStudents]);
 
   const monthData = useMemo(() => {
     if (!month) return null;

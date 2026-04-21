@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import type { Student } from '@/types';
 import { hashPin } from '@/utils/auth';
 import { isFirebaseConfigured, subscribeCollection, firestoreSet, firestoreUpdate, firestoreDelete } from '@/lib/firestoreSync';
+import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface StudentState {
   students: Student[];
@@ -74,9 +76,43 @@ export const useStudentStore = isFirebaseConfigured
           }));
           firestoreUpdate(COLLECTION, id, { isActive: false }).catch((e) => console.warn('[students] deactivate', e));
         },
+        /**
+         * 学生を完全削除 (cascade): students / shifts / availability を全て削除し、
+         * 他人のシフトに残る「この学生が代わりに入った」「この学生に代わりを頼んだ」参照もクリアする。
+         * 削除された学生のシフトが給与配分に幽霊として残らないようにするため。
+         */
         deleteStudent: async (id) => {
           set((state) => ({ students: state.students.filter((s) => s.id !== id) }));
-          firestoreDelete(COLLECTION, id).catch((e) => console.warn('[students] delete', e));
+          if (!db) {
+            firestoreDelete(COLLECTION, id).catch((e) => console.warn('[students] delete', e));
+            return;
+          }
+          try {
+            const [shiftsSnap, availSnap, replacedBySnap, replacesSnap] = await Promise.all([
+              getDocs(query(collection(db, 'shifts'), where('studentId', '==', id))),
+              getDocs(query(collection(db, 'availability'), where('studentId', '==', id))),
+              getDocs(query(collection(db, 'shifts'), where('replacedBy', '==', id))),
+              getDocs(query(collection(db, 'shifts'), where('replacesId', '==', id))),
+            ]);
+            const batch = writeBatch(db);
+            batch.delete(doc(db, COLLECTION, id));
+            shiftsSnap.docs.forEach((d) => batch.delete(d.ref));
+            availSnap.docs.forEach((d) => batch.delete(d.ref));
+            // 他人のシフトにある「この学生が代わりに来た」参照をクリア
+            replacedBySnap.docs.forEach((d) => batch.update(d.ref, { replacedBy: null }));
+            // replacesId で元のシフトを指してるものは、元シフトごと消えてるか残ってるかによるが、
+            // 代わりの学生がこのidだった場合すでに shiftsSnap で削除対象。念のためクリア。
+            replacesSnap.docs.forEach((d) => {
+              if (!shiftsSnap.docs.find((sd) => sd.id === d.id)) {
+                batch.update(d.ref, { replacesId: null });
+              }
+            });
+            await batch.commit();
+          } catch (e) {
+            console.warn('[students] cascade delete', e);
+            // フォールバック: せめて student doc だけは消す
+            firestoreDelete(COLLECTION, id).catch(() => {});
+          }
         },
       };
     })
