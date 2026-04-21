@@ -1,5 +1,5 @@
 import { signInAnonymously, signOut, onAuthStateChanged, type User } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '@/lib/firebase';
 
 // Simple deterministic hash for PINs and passwords.
