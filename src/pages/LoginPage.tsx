@@ -166,8 +166,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl ring-1 ring-slate-200 w-full max-w-sm p-8">
+    <div className="relative min-h-screen bg-gradient-to-b from-sky-100 via-sky-50 to-blue-100 flex items-center justify-center p-4 overflow-hidden">
+      <WaveBackground />
+      <div className="relative z-10 bg-white/95 backdrop-blur rounded-2xl shadow-xl ring-1 ring-slate-200 w-full max-w-sm p-8">
         <div className="text-center mb-7">
           <img
             src="/pwa-192x192.png"
@@ -388,6 +389,48 @@ export default function LoginPage() {
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * ログイン画面の流れる波。SVG 3レイヤーを translateX で -50% 無限スクロール。
+ * CSS transform のみなので GPU 合成で回り、レイアウト/ペイント負荷なし。
+ * 各レイヤーで速度・不透明度・縦位置を変え、視差で奥行きを出す。
+ */
+function WaveBackground() {
+  // 2周期分のsinカーブ: 0〜2400幅で波を2つ分繋げ、-50%流しで継ぎ目なし
+  const wavePath =
+    'M0 100 C 150 40, 450 160, 600 100 S 1050 40, 1200 100 S 1650 160, 1800 100 S 2250 40, 2400 100 L 2400 200 L 0 200 Z';
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] overflow-hidden" aria-hidden>
+      {/* 一番奥の波 (ゆっくり) */}
+      <svg
+        className="wave-layer"
+        style={{ animationDuration: '22s', opacity: 0.32, bottom: '14%' }}
+        viewBox="0 0 2400 200"
+        preserveAspectRatio="none"
+      >
+        <path d={wavePath} fill="#bae6fd" />
+      </svg>
+      {/* 中間の波 */}
+      <svg
+        className="wave-layer"
+        style={{ animationDuration: '15s', opacity: 0.55, bottom: '6%' }}
+        viewBox="0 0 2400 200"
+        preserveAspectRatio="none"
+      >
+        <path d={wavePath} fill="#7dd3fc" />
+      </svg>
+      {/* 手前の波 (早い) */}
+      <svg
+        className="wave-layer"
+        style={{ animationDuration: '9s', opacity: 0.75, bottom: 0 }}
+        viewBox="0 0 2400 200"
+        preserveAspectRatio="none"
+      >
+        <path d={wavePath} fill="#3b82f6" />
+      </svg>
     </div>
   );
 }

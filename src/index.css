@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+/* ログイン画面の流れる波。
+   transform のみをアニメーションするので GPU 合成レイヤに乗り、
+   CPU/レイアウト負荷はほぼゼロ。SVG は2周期分のパスを translateX で
+   -50% 流すことで継ぎ目なく無限スクロールする。 */
+@keyframes wave-flow {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+.wave-layer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  animation-name: wave-flow;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wave-layer { animation: none; }
+}
