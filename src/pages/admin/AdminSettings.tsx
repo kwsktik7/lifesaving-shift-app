@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { exportAllData, importAllData } from '@/utils/export';
-import { Trash2, Download, Upload, Pencil, Check, X } from 'lucide-react';
+import { Trash2, Download, Upload, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
@@ -175,6 +175,22 @@ export default function AdminSettings() {
   ];
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleLeader, setNewRoleLeader] = useState(false);
+  // ドラッグ並び替え: 掴んでる行のインデックスと、ドラッグ中にホバーしてる挿入位置
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  async function moveRole(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || from >= currentRoles.length || to >= currentRoles.length) return;
+    const next = [...currentRoles];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    try {
+      await updateSettings({ roles: next });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`並び替えに失敗しました: ${msg}`);
+    }
+  }
 
   async function addRole() {
     const name = newRoleName.trim();
@@ -482,34 +498,72 @@ export default function AdminSettings() {
         <p className="text-xs text-gray-500 mb-3">
           新規アカウント作成時に学生が選択できる役職の一覧。「要パスワード」にチェックすると、選択時に監視長パスワードが要求されます(シフト生成への影響があるため)。
         </p>
+        <p className="text-xs text-gray-400 mb-2">左端のハンドル（⋮⋮）をドラッグして並び替えできます。</p>
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
           {currentRoles.length === 0 ? (
             <p className="text-sm text-gray-400">役職が登録されていません</p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {currentRoles.map((r, idx) => (
-                <div key={`${r.name}-${idx}`} className="flex items-center justify-between py-2">
-                  <span className="text-sm text-gray-800 font-medium">{r.name}</span>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={r.isLeader}
-                        onChange={() => toggleRoleLeader(idx)}
-                        className="w-3.5 h-3.5"
-                      />
-                      要パスワード
-                    </label>
-                    <button
-                      onClick={() => removeRole(idx)}
-                      className="text-red-400 hover:text-red-600 transition-colors"
-                      title="削除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+              {currentRoles.map((r, idx) => {
+                const isDragging = dragIndex === idx;
+                const isOver = overIndex === idx && dragIndex !== null && dragIndex !== idx;
+                return (
+                  <div
+                    key={`${r.name}-${idx}`}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragIndex(idx);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (overIndex !== idx) setOverIndex(idx);
+                    }}
+                    onDragLeave={() => {
+                      if (overIndex === idx) setOverIndex(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIndex !== null && dragIndex !== idx) {
+                        moveRole(dragIndex, idx);
+                      }
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                    className={`flex items-center justify-between py-2 px-1 rounded transition-colors ${
+                      isDragging ? 'opacity-40' : ''
+                    } ${isOver ? 'bg-blue-50 border-t-2 border-blue-400' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <GripVertical size={16} className="text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                      <span className="text-sm text-gray-800 font-medium truncate">{r.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={r.isLeader}
+                          onChange={() => toggleRoleLeader(idx)}
+                          className="w-3.5 h-3.5"
+                        />
+                        要パスワード
+                      </label>
+                      <button
+                        onClick={() => removeRole(idx)}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                        title="削除"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           <div className="pt-2 border-t border-gray-100 flex gap-2 flex-wrap">
