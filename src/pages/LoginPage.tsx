@@ -166,12 +166,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-lg w-full max-w-sm p-8">
-        <div className="text-center mb-6">
-          <div className="text-4xl mb-2">🏄</div>
-          <h1 className="text-xl font-bold text-gray-800">{settings.clubName}</h1>
-          <p className="text-sm text-gray-500">シフト管理システム</p>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl ring-1 ring-slate-200 w-full max-w-sm p-8">
+        <div className="text-center mb-7">
+          <img
+            src="/pwa-192x192.png"
+            alt="逗子SLSC"
+            width={88}
+            height={88}
+            className="mx-auto mb-3 rounded-full ring-2 ring-blue-100 shadow-md object-cover"
+          />
+          <h1 className="text-xl font-bold text-gray-800 tracking-wide">{settings.clubName}</h1>
+          <p className="text-xs text-gray-500 mt-1">シフト管理システム</p>
         </div>
 
         {/* Tab */}
