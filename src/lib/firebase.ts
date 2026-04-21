@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -17,6 +17,11 @@ export const isFirebaseConfigured =
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 
-// シンプルなデフォルト初期化 (キャッシュはSDK既定のメモリ)
-export const db = app ? getFirestore(app) : null;
+// long-polling を強制: WebChannel(WebSocket類似)の接続不安定を回避。
+// 特定のネットワーク・プロキシ・モバイル環境での書き込みハング問題の解消。
+export const db = app
+  ? initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+    })
+  : null;
 export const auth = app ? getAuth(app) : null;

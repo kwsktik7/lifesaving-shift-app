@@ -45,20 +45,30 @@ export function subscribeDoc<T>(
   return unsub;
 }
 
+// 書き込みハング対策: 10秒タイムアウトを追加
+function withTimeout<T>(promise: Promise<T>, ms = 10000, label = 'write'): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 // 書き込みヘルパー
 export async function firestoreSet(collectionName: string, docId: string, data: DocumentData) {
   if (!db) return;
-  await setDoc(doc(db, collectionName, docId), data);
+  await withTimeout(setDoc(doc(db, collectionName, docId), data), 10000, `setDoc ${collectionName}/${docId}`);
 }
 
 export async function firestoreUpdate(collectionName: string, docId: string, data: DocumentData) {
   if (!db) return;
-  await updateDoc(doc(db, collectionName, docId), data);
+  await withTimeout(updateDoc(doc(db, collectionName, docId), data), 10000, `updateDoc ${collectionName}/${docId}`);
 }
 
 export async function firestoreDelete(collectionName: string, docId: string) {
   if (!db) return;
-  await deleteDoc(doc(db, collectionName, docId));
+  await withTimeout(deleteDoc(doc(db, collectionName, docId)), 10000, `deleteDoc ${collectionName}/${docId}`);
 }
 
 export async function firestoreBatchWrite(
@@ -72,7 +82,7 @@ export async function firestoreBatchWrite(
     else if (op.type === 'update') batch.update(ref, op.data!);
     else batch.delete(ref);
   }
-  await batch.commit();
+  await withTimeout(batch.commit(), 15000, 'batch.commit');
 }
 
 export { db, isFirebaseConfigured };
