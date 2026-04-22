@@ -38,25 +38,39 @@ function distributeFullDays(
   studentDays: { studentId: string; days: number }[],
   totalFullSlots: number
 ): Map<string, number> {
-  const total = studentDays.reduce((acc, s) => acc + s.days, 0);
-  if (total === 0) return new Map();
+  // 半日(0.5刻み)を扱うため、内部で全てを2倍して整数化してHamilton最大剰余法で配分、
+  // 最後に ÷2 して戻す。加えて各学生の出勤半日数でcapし、fullDaysがその人の
+  // totalDaysを超えないように保証(半日しか来てない人にフル1枠振る等のバグを防ぐ)。
+  const scale = 2;
+  const scaled = studentDays.map((s) => ({
+    studentId: s.studentId,
+    cap: Math.round(s.days * scale),
+  }));
+  const totalCap = scaled.reduce((acc, s) => acc + s.cap, 0);
+  if (totalCap === 0) return new Map();
 
-  const ratio = totalFullSlots / total;
-  const result: { studentId: string; base: number; remainder: number }[] = studentDays.map((s) => {
-    const exact = s.days * ratio;
-    const base = Math.floor(exact);
-    return { studentId: s.studentId, base, remainder: exact - base };
+  const targetSlots = Math.min(Math.round(totalFullSlots * scale), totalCap);
+  const ratio = targetSlots / totalCap;
+
+  const result = scaled.map((s) => {
+    const exact = s.cap * ratio;
+    const base = Math.min(s.cap, Math.floor(exact));
+    return { studentId: s.studentId, base, remainder: exact - base, cap: s.cap };
   });
 
-  let remaining = totalFullSlots - result.reduce((acc, r) => acc + r.base, 0);
+  // 余り枠をremainder大きい順に+1していく(cap超過は絶対避ける)
+  let remaining = targetSlots - result.reduce((acc, r) => acc + r.base, 0);
   const sorted = [...result].sort((a, b) => b.remainder - a.remainder);
-  for (let i = 0; i < remaining && i < sorted.length; i++) {
-    sorted[i].base++;
+  for (let i = 0; i < sorted.length && remaining > 0; i++) {
+    if (sorted[i].base < sorted[i].cap) {
+      sorted[i].base++;
+      remaining--;
+    }
   }
 
   const map = new Map<string, number>();
   for (const r of result) {
-    map.set(r.studentId, r.base);
+    map.set(r.studentId, r.base / scale);
   }
   return map;
 }
@@ -260,16 +274,19 @@ export default function AdminPayAllocation() {
         .filter((s) => s.studentId === alloc.student.id)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      let fullRemaining = alloc.fullDays;
+      // fullRemaining は半日単位で管理(×2 整数化)。半日シフトは -1、終日シフトは -2 消費。
+      // 配分された fullDays が 0.5 刻みでも破綻しないようにするため。
+      let fullRemainingHalf = Math.round(alloc.fullDays * 2);
       for (const shift of studentShifts) {
         // 1年生の最初3回の勤務は強制V
         if (monthData.forcedVShiftIds.has(shift.id)) {
           updates.push({ id: shift.id, payType: 'V' });
           continue;
         }
-        if (fullRemaining > 0) {
+        const costHalf = (shift.attendance === 'am' || shift.attendance === 'pm') ? 1 : 2;
+        if (fullRemainingHalf >= costHalf) {
           updates.push({ id: shift.id, payType: '1' });
-          fullRemaining--;
+          fullRemainingHalf -= costHalf;
         } else {
           updates.push({ id: shift.id, payType: 'V' });
         }
