@@ -45,15 +45,23 @@ export function exportShiftScheduleXlsx(
     return [student.grade || '', student.role || '', student.name, ...cells, count];
   });
 
-  // Per-day totals row
+  // Per-day totals (全員/PWC持ち) の各行
+  const studentById = new Map(activeStudents.map((s) => [s.id, s]));
   const totals = openDays.map((d) => {
     return shifts.filter(
       (s) => s.date === d.date && s.status !== 'cancelled' && s.status !== 'draft'
     ).length;
   });
+  const pwcTotals = openDays.map((d) => {
+    return shifts.filter((s) => {
+      if (s.date !== d.date || s.status === 'cancelled' || s.status === 'draft') return false;
+      return studentById.get(s.studentId)?.hasPwc === true;
+    }).length;
+  });
   const totalRow = ['', '', '合計', ...totals.map((t) => t || ''), ''];
+  const pwcRow = ['', '', 'PWC合計', ...pwcTotals.map((t) => t || ''), ''];
 
-  const data = [header1, header2, ...rows, totalRow];
+  const data = [header1, header2, ...rows, totalRow, pwcRow];
   const ws = XLSX.utils.aoa_to_sheet(data);
 
   ws['!cols'] = [
