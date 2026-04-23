@@ -23,7 +23,7 @@ interface RosterEntry {
 const ZUSHI_2026_ROSTER: RosterEntry[] = [
   // 3年 (#1-22)
   { name: '男沢 壮真', grade: '3年', role: '監視長', hasPwc: true, isLeader: true },
-  { name: '川崎 太暉', grade: '3年', role: '副監視長', hasPwc: false, isLeader: true },
+  { name: '川崎 太暉', grade: '3年', role: '副監視長', hasPwc: true, isLeader: true },
   { name: 'ガンディー 咲', grade: '3年', role: '副監視長', hasPwc: false, isLeader: true },
   { name: '齊藤 弘桔', grade: '3年', role: 'ガード委員長', hasPwc: true, isLeader: false },
   { name: '野元 耕太朗', grade: '3年', role: 'ガード・イベント分科長', hasPwc: false, isLeader: false },
@@ -154,7 +154,7 @@ export async function seedZushi2026(): Promise<{
   const sb = writeBatch(db);
   sb.update(doc(db, 'settings', 'main'), {
     seasonStart: '2026-07-03',
-    seasonEnd: '2026-09-06',
+    seasonEnd: '2026-09-05',
     monthlyBudgets: { '2026-07': 2000000, '2026-08': 2500000, '2026-09': 500000 },
     allocatedMonths: [],
     availabilityLocked: false,
@@ -163,7 +163,7 @@ export async function seedZushi2026(): Promise<{
 
   // 3) seasonDays を 2026-07-03 〜 2026-09-06 で生成
   const start = parseISO('2026-07-03');
-  const end = parseISO('2026-09-06');
+  const end = parseISO('2026-09-05');
   const dates = eachDayOfInterval({ start, end }).map((d) => format(d, 'yyyy-MM-dd'));
   for (let i = 0; i < dates.length; i += 450) {
     const chunk = dates.slice(i, i + 450);
