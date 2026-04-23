@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { CheckCircle, XCircle, Users, Save, ArrowRightLeft, Sun, Sunset, Circle, Pencil } from 'lucide-react';
 import type { ShiftStatus, AttendanceType } from '@/types';
+import { sortStudents } from '@/utils/studentSort';
 
 export default function AdminAttendance() {
   const { days } = useSeasonStore();
@@ -29,9 +30,31 @@ export default function AdminAttendance() {
     (s) => s.date === d.date && (s.status === 'published' || s.status === 'attended' || s.status === 'absent')
   ));
 
-  const dayShifts = shifts.filter(
-    (s) => s.date === selectedDate && s.status !== 'cancelled' && s.status !== 'draft'
+  // sortStudents順(監視長→副監視長→3→4→2→1→その他)で並べた全学生
+  const sortedActiveStudents = useMemo(
+    () => sortStudents(students.filter((s) => s.isActive)),
+    [students]
   );
+  const activeStudents = sortedActiveStudents;
+  // 学生idから並び順インデックスを引くテーブル
+  const studentOrderIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    sortedActiveStudents.forEach((s, i) => m.set(s.id, i));
+    return m;
+  }, [sortedActiveStudents]);
+
+  // 当日のシフトを sortStudents順で並べる
+  const dayShifts = useMemo(() => {
+    const list = shifts.filter(
+      (s) => s.date === selectedDate && s.status !== 'cancelled' && s.status !== 'draft'
+    );
+    // 大きい数字(未登録の学生=Infinity扱い)は末尾に落とす
+    return list.sort((a, b) => {
+      const ai = studentOrderIndex.get(a.studentId) ?? Number.MAX_SAFE_INTEGER;
+      const bi = studentOrderIndex.get(b.studentId) ?? Number.MAX_SAFE_INTEGER;
+      return ai - bi;
+    });
+  }, [shifts, selectedDate, studentOrderIndex]);
 
   const attendedCount = dayShifts.filter((s) => s.status === 'attended').length;
   const absentCount = dayShifts.filter((s) => s.status === 'absent').length;
@@ -41,8 +64,6 @@ export default function AdminAttendance() {
   // 全員入力済み = 保存済みとみなす（データから導出するので画面遷移しても維持）
   // ただし明示的に変更ボタンを押した日は編集モード
   const isViewMode = allDone && editingDate !== selectedDate;
-
-  const activeStudents = students.filter((s) => s.isActive);
 
   function markAttended(shiftId: string, attendance: AttendanceType = 'full') {
     updateShift(shiftId, { status: 'attended' as ShiftStatus, attendance });
