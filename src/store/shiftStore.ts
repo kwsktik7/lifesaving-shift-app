@@ -8,7 +8,7 @@ import { isFirebaseConfigured, subscribeCollection, firestoreSet, firestoreUpdat
 interface ShiftState {
   shifts: ShiftAssignment[];
   _ready: boolean;
-  assignShift: (studentId: string, date: string, payType: PayType) => void;
+  assignShift: (studentId: string, date: string, payType: PayType, attendance?: AttendanceType) => void;
   updateShift: (id: string, patch: Partial<Pick<ShiftAssignment, 'payType' | 'status' | 'attendance' | 'replacedBy' | 'replacesId' | 'note'>>) => void;
   addReplacementShift: (originalShiftId: string, replacementStudentId: string, attendance: AttendanceType) => void;
   removeShift: (id: string) => void;
@@ -104,15 +104,15 @@ export const useShiftStore = isFirebaseConfigured
       return {
         shifts: [],
         _ready: false,
-        assignShift: async (studentId, date, payType) => {
+        assignShift: async (studentId, date, payType, attendance = 'full') => {
           const existing = get().shifts.find(
             (s) => s.studentId === studentId && s.date === date && s.status !== 'cancelled',
           );
           if (existing) {
             set((state) => ({
-              shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType } : s)),
+              shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType, attendance } : s)),
             }));
-            firestoreUpdate(COLLECTION, existing.id, { payType }).catch((e) => console.warn('[shifts] assign-update', e));
+            firestoreUpdate(COLLECTION, existing.id, { payType, attendance }).catch((e) => console.warn('[shifts] assign-update', e));
             return;
           }
           const shift: ShiftAssignment = {
@@ -121,7 +121,7 @@ export const useShiftStore = isFirebaseConfigured
             date,
             payType,
             status: 'draft',
-            attendance: 'full' as const,
+            attendance,
             note: '',
             createdAt: new Date().toISOString(),
           };
@@ -220,13 +220,13 @@ export const useShiftStore = isFirebaseConfigured
         (set, get) => ({
           shifts: [],
           _ready: true,
-          assignShift: (studentId, date, payType) => {
+          assignShift: (studentId, date, payType, attendance = 'full') => {
             const existing = get().shifts.find(
               (s) => s.studentId === studentId && s.date === date && s.status !== 'cancelled',
             );
             if (existing) {
               set((state) => ({
-                shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType } : s)),
+                shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType, attendance } : s)),
               }));
               return;
             }
@@ -239,7 +239,7 @@ export const useShiftStore = isFirebaseConfigured
                   date,
                   payType,
                   status: 'draft',
-                  attendance: 'full' as const,
+                  attendance,
                   note: '',
                   createdAt: new Date().toISOString(),
                 },

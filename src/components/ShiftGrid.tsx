@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import type { ShiftAssignment, Student, SeasonDay, Availability } from '@/types';
+import type { ShiftAssignment, Student, SeasonDay, Availability, AvailabilityStatus } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
 
 interface Props {
@@ -44,10 +44,14 @@ export default function ShiftGrid({
     return m;
   }, [shifts]);
 
-  // availMap: "studentId:date" -> boolean
+  // availMap: "studentId:date" -> AvailabilityStatus (yes/am/pm/undecided/no)
+  // 終日可なのか午前/午後のみなのかを区別するためstatusそのものを保持する。
   const availMap = useMemo(() => {
-    const m = new Map<string, boolean>();
-    for (const a of availabilities) m.set(`${a.studentId}:${a.date}`, a.available);
+    const m = new Map<string, AvailabilityStatus>();
+    for (const a of availabilities) {
+      const status: AvailabilityStatus = a.status ?? (a.available ? 'yes' : 'no');
+      m.set(`${a.studentId}:${a.date}`, status);
+    }
     return m;
   }, [availabilities]);
 
@@ -153,7 +157,7 @@ export default function ShiftGrid({
                 </td>
                 {openDays.map((d) => {
                   const shift = shiftMap.get(`${student.id}:${d.date}`);
-                  const avail = availMap.get(`${student.id}:${d.date}`);
+                  const availStatus = availMap.get(`${student.id}:${d.date}`);
                   const isSelected = d.date === selectedDate;
                   const isConsecutiveWarn = consecutiveWarning.has(`${student.id}:${d.date}`);
 
@@ -166,7 +170,7 @@ export default function ShiftGrid({
                       onClick={() => onDateClick?.(d.date)}
                       title={isConsecutiveWarn ? '3連勤以上' : undefined}
                     >
-                      <CellContent shift={shift} avail={avail} hidePayType={hidePayType} />
+                      <CellContent shift={shift} availStatus={availStatus} hidePayType={hidePayType} />
                     </td>
                   );
                 })}
@@ -202,41 +206,78 @@ export default function ShiftGrid({
   );
 }
 
-function CellContent({ shift, avail, hidePayType }: { shift?: ShiftAssignment; avail?: boolean; hidePayType?: boolean }) {
+function CellContent({
+  shift, availStatus, hidePayType,
+}: {
+  shift?: ShiftAssignment;
+  availStatus?: AvailabilityStatus;
+  hidePayType?: boolean;
+}) {
   if (shift) {
     const isDraft = shift.status === 'draft';
+    const half = shift.attendance === 'am' ? '前' : shift.attendance === 'pm' ? '後' : null;
     if (hidePayType) {
-      // シフト表（配布用）: 勤怠ステータスに関係なくシフト割当として表示
+      // シフト表（配布用）: 終日は「出」、半日は「前」「後」で表示
       return (
         <span
           className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-bold ${
-            isDraft ? 'bg-blue-100 text-blue-400' : 'bg-blue-500 text-white'
+            half
+              ? isDraft ? 'bg-yellow-100 text-yellow-500' : 'bg-yellow-500 text-white'
+              : isDraft ? 'bg-blue-100 text-blue-400' : 'bg-blue-500 text-white'
           }`}
           style={{ fontSize: '11px' }}
+          title={half ? (shift.attendance === 'am' ? '午前のみ' : '午後のみ') : '終日'}
         >
-          出
+          {half ?? '出'}
         </span>
       );
     }
-    // 管理者向け（1/V表示）: 勤怠に関係なくシフト割当として1/Vを表示
+    // 管理者向け（1/V表示）: 半日は 1/V に "前"/"後" サフィックスを付けない代わりに
+    // セル背景で黄色系にして半日を明示する
     return (
       <span
         className={`inline-flex items-center justify-center w-6 h-6 rounded font-bold ${
           shift.payType === '1'
             ? isDraft ? 'bg-green-100 text-green-600 opacity-60' : 'bg-green-500 text-white'
             : isDraft ? 'bg-orange-100 text-orange-500 opacity-60' : 'bg-orange-400 text-white'
-        }`}
+        } ${half ? 'ring-2 ring-yellow-400' : ''}`}
         style={{ fontSize: '11px' }}
-        title={isDraft ? '下書き' : '公開済み'}
+        title={half ? `${shift.payType} / ${shift.attendance === 'am' ? '午前のみ' : '午後のみ'}` : isDraft ? '下書き' : '公開済み'}
       >
         {shift.payType}
       </span>
     );
   }
-  if (avail === true) {
-    return <span className="text-green-400" style={{ fontSize: '12px' }}>○</span>;
+  // 可否(未割当)の表示
+  if (availStatus === 'yes') {
+    return <span className="text-green-500 font-bold" style={{ fontSize: '12px' }}>○</span>;
   }
-  if (avail === false) {
+  if (availStatus === 'am') {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded bg-yellow-100 text-yellow-700 font-bold"
+        style={{ fontSize: '9px', width: '22px', height: '22px' }}
+        title="午前のみ"
+      >
+        前
+      </span>
+    );
+  }
+  if (availStatus === 'pm') {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded bg-orange-100 text-orange-700 font-bold"
+        style={{ fontSize: '9px', width: '22px', height: '22px' }}
+        title="午後のみ"
+      >
+        後
+      </span>
+    );
+  }
+  if (availStatus === 'undecided') {
+    return <span className="text-purple-400 font-bold" style={{ fontSize: '12px' }}>?</span>;
+  }
+  if (availStatus === 'no') {
     return <span className="text-gray-200" style={{ fontSize: '10px' }}>×</span>;
   }
   return null;

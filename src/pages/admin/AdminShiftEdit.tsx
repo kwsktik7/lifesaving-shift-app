@@ -6,7 +6,7 @@ import { useShiftStore } from '@/store/shiftStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Check, X, Plus } from 'lucide-react';
-import type { Student, ShiftAssignment } from '@/types';
+import type { Student, ShiftAssignment, AvailabilityStatus, AttendanceType } from '@/types';
 import ShiftGrid from '@/components/ShiftGrid';
 import { sortStudents } from '@/utils/studentSort';
 
@@ -30,24 +30,35 @@ export default function AdminShiftEdit() {
     return days.find((d) => d.date === selectedDate) ?? null;
   }, [days, selectedDate]);
 
+  // 選択日の 学生id → 可否status (yes/am/pm/undecided/no)
   const dayAvailMap = useMemo(() => {
-    const m = new Map<string, boolean>();
+    const m = new Map<string, AvailabilityStatus>();
     for (const a of availabilities.filter((a) => a.date === selectedDate)) {
-      m.set(a.studentId, a.available);
+      const status: AvailabilityStatus = a.status ?? (a.available ? 'yes' : 'no');
+      m.set(a.studentId, status);
     }
     return m;
   }, [availabilities, selectedDate]);
 
   const dayShifts = useMemo(() => getShiftsForDate(selectedDate), [shifts, selectedDate]);
 
-  const availableStudents = activeStudents.filter((s) => dayAvailMap.get(s.id) === true);
+  // 出勤可能(終日/午前/午後)な学生のみ。undecided/no は除外。
+  const availableStudents = activeStudents.filter((s) => {
+    const st = dayAvailMap.get(s.id);
+    return st === 'yes' || st === 'am' || st === 'pm';
+  });
 
   function handlePublish() {
     publishDay(selectedDate);
   }
 
   function handleAddStudent(studentId: string) {
-    assignShift(studentId, selectedDate, 'V'); // payType は後で月次配分で決まる
+    // 可否statusに応じた attendance を引き継ぐ(午前のみ提出なら 'am' シフトにする)
+    const status = dayAvailMap.get(studentId);
+    const attendance: AttendanceType =
+      status === 'am' ? 'am' : status === 'pm' ? 'pm' : 'full';
+    // payType は後で月次配分で決まる → 初期値V
+    assignShift(studentId, selectedDate, 'V', attendance);
   }
 
   const draftCount = dayShifts.filter((s) => s.status === 'draft').length;
@@ -136,21 +147,21 @@ export default function AdminShiftEdit() {
                 {leaders.length > 0 && (
                   <StudentSection
                     title="監視長・副監視長" titleColor="text-red-700" bgColor="bg-red-50" borderColor="border-red-200"
-                    students={leaders} dayShifts={dayShifts}
+                    students={leaders} dayShifts={dayShifts} dayAvailMap={dayAvailMap}
                     onAdd={handleAddStudent} onRemove={removeShift}
                   />
                 )}
                 {pwcHolders.length > 0 && (
                   <StudentSection
                     title="PWC免許保持者" titleColor="text-blue-700" bgColor="bg-blue-50" borderColor="border-blue-200"
-                    students={pwcHolders} dayShifts={dayShifts}
+                    students={pwcHolders} dayShifts={dayShifts} dayAvailMap={dayAvailMap}
                     onAdd={handleAddStudent} onRemove={removeShift}
                   />
                 )}
                 {others.length > 0 && (
                   <StudentSection
                     title="その他" titleColor="text-gray-700" bgColor="bg-gray-50" borderColor="border-gray-200"
-                    students={others} dayShifts={dayShifts}
+                    students={others} dayShifts={dayShifts} dayAvailMap={dayAvailMap}
                     onAdd={handleAddStudent} onRemove={removeShift}
                   />
                 )}
@@ -185,8 +196,34 @@ export default function AdminShiftEdit() {
   );
 }
 
+/** 可否statusを氏名横に出すためのバッジ */
+function AvailBadge({ status }: { status?: AvailabilityStatus }) {
+  if (status === 'yes') {
+    return (
+      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-bold">
+        終日
+      </span>
+    );
+  }
+  if (status === 'am') {
+    return (
+      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 text-[10px] font-bold">
+        午前のみ
+      </span>
+    );
+  }
+  if (status === 'pm') {
+    return (
+      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] font-bold">
+        午後のみ
+      </span>
+    );
+  }
+  return null;
+}
+
 function StudentSection({
-  title, titleColor, bgColor, borderColor, students, dayShifts, onAdd, onRemove,
+  title, titleColor, bgColor, borderColor, students, dayShifts, dayAvailMap, onAdd, onRemove,
 }: {
   title: string;
   titleColor: string;
@@ -194,6 +231,7 @@ function StudentSection({
   borderColor: string;
   students: Student[];
   dayShifts: ShiftAssignment[];
+  dayAvailMap: Map<string, AvailabilityStatus>;
   onAdd: (studentId: string) => void;
   onRemove: (shiftId: string) => void;
 }) {
@@ -215,17 +253,26 @@ function StudentSection({
         <tbody className="divide-y divide-gray-100">
           {students.map((student) => {
             const shift = dayShifts.find((s) => s.studentId === student.id);
+            const availStatus = dayAvailMap.get(student.id);
             return (
               <tr key={student.id} className={`hover:bg-gray-50 ${shift ? 'bg-blue-50/30' : ''}`}>
                 <td className="px-4 py-3 font-medium text-gray-800">
                   {student.name}
+                  {/* 可否(終日/午前のみ/午後のみ) を氏名の横に表示 */}
+                  <AvailBadge status={availStatus} />
                   {student.role && <span className="ml-2 text-xs text-gray-400">{student.role}</span>}
                 </td>
                 <td className="px-4 py-3 text-center text-xs text-gray-500">{student.grade}</td>
                 <td className="px-4 py-3 text-center">
                   {shift ? (
-                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                      出勤
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                        shift.attendance === 'am' || shift.attendance === 'pm'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {shift.attendance === 'am' ? '出勤(午前)' : shift.attendance === 'pm' ? '出勤(午後)' : '出勤'}
                     </span>
                   ) : (
                     <span className="text-gray-300 text-xs">未割当</span>

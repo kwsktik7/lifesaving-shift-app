@@ -40,6 +40,9 @@ export function exportShiftScheduleXlsx(
       );
       if (!shift) return '';
       count++;
+      // 半日(午前/午後)は明示、終日は○
+      if (shift.attendance === 'am') return '午前';
+      if (shift.attendance === 'pm') return '午後';
       return '○';
     });
     return [student.grade || '', student.role || '', student.name, ...cells, count];
