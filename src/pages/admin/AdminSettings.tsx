@@ -4,8 +4,10 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
-import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
+import { Trash2, Pencil, Check, X, GripVertical, Sparkles } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
+import { collection, getDocs, query, where, writeBatch, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -169,6 +171,58 @@ export default function AdminSettings() {
   ];
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleLeader, setNewRoleLeader] = useState(false);
+
+  // [一時] 監視長・男沢壮真の可否を全日「終日○」に固定する
+  // (どの日にも最低1人リーダーが立つことを保証するための運用ツール)
+  const [fixingLeader, setFixingLeader] = useState(false);
+  async function fixMasuzawaAllYes() {
+    if (!db) return;
+    if (!confirm('男沢 壮真 の可否を全日「終日○」で上書きします。よろしいですか?')) return;
+    setFixingLeader(true);
+    try {
+      const target = students.find((s) => s.name === '男沢 壮真');
+      if (!target) {
+        setErrorMsg('「男沢 壮真」が学生管理に見つかりません');
+        setFixingLeader(false);
+        return;
+      }
+      const sid = target.id;
+      // seasonDaysから全日付を取得
+      const daysSnap = await getDocs(collection(db, 'seasonDays'));
+      const dates = daysSnap.docs.map((d) => d.id).sort();
+      // 既存の男沢のavailability全削除
+      const existing = await getDocs(query(collection(db, 'availability'), where('studentId', '==', sid)));
+      for (let i = 0; i < existing.docs.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const d of existing.docs.slice(i, i + 450)) batch.delete(d.ref);
+        await batch.commit();
+      }
+      // 全日 'yes' で再作成
+      const now = new Date().toISOString();
+      for (let i = 0; i < dates.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const date of dates.slice(i, i + 450)) {
+          const id = crypto.randomUUID();
+          batch.set(doc(db, 'availability', id), {
+            studentId: sid,
+            date,
+            available: true,
+            status: 'yes',
+            note: '',
+            submittedAt: now,
+          });
+        }
+        await batch.commit();
+      }
+      setSuccessMsg(`男沢 壮真 の可否を全${dates.length}日「終日○」に固定しました`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`固定失敗: ${msg}`);
+    } finally {
+      setFixingLeader(false);
+    }
+  }
 
   // ドラッグ並び替え: 掴んでる行のインデックスと、ドラッグ中にホバーしてる挿入位置
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -682,6 +736,24 @@ export default function AdminSettings() {
                 );
               })
           )}
+        </div>
+      </section>
+
+      {/* [一時] 監視長固定 */}
+      <section>
+        <h2 className="text-base font-semibold text-amber-700 mb-2">[一時] 監視長固定</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          男沢 壮真 を全日「終日○」に上書きします(誰か1人は必ずリーダーが立つ保証用)。
+        </p>
+        <div className="bg-white rounded-xl border border-amber-300 p-4">
+          <button
+            onClick={fixMasuzawaAllYes}
+            disabled={fixingLeader}
+            className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
+          >
+            <Sparkles size={16} />
+            {fixingLeader ? '固定中...' : '男沢 壮真 を全日終日○に固定'}
+          </button>
         </div>
       </section>
 

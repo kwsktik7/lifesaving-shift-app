@@ -129,8 +129,24 @@ export default function StudentAvailability() {
     });
   }, []);
 
+  const [saveError, setSaveError] = useState('');
   function handleSave() {
     if (locked) return;
+    // 未定(undecided)で理由メモが空のものがあれば保存拒否
+    const undecidedWithoutNote: string[] = [];
+    for (const [date, val] of localAvail.entries()) {
+      if (val.status === 'undecided' && !val.note.trim()) {
+        undecidedWithoutNote.push(date);
+      }
+    }
+    if (undecidedWithoutNote.length > 0) {
+      const sorted = undecidedWithoutNote.sort();
+      const preview = sorted.slice(0, 5).map((d) => format(parseISO(d), 'M/d', { locale: ja })).join(', ');
+      const more = sorted.length > 5 ? ` 他${sorted.length - 5}件` : '';
+      setSaveError(`未定の日は必ず理由と確定予定時期を記入してください。未記入: ${preview}${more}`);
+      return;
+    }
+    setSaveError('');
     const entries = openDays
       .filter((d) => localAvail.has(d.date))
       .map((d) => {
@@ -380,18 +396,21 @@ export default function StudentAvailability() {
             <h3 className="font-bold text-gray-800">
               {format(parseISO(editingNoteDate), 'M月d日(E)', { locale: ja })} のメモ
             </h3>
-            <p className="text-xs text-gray-500">未定の理由や、いつ頃分かるか等を記入してください</p>
+            <p className="text-xs text-gray-500">
+              未定の理由と、<b>いつ頃確定しそうか</b>を必ず記入してください。
+            </p>
             <textarea
               autoFocus
-              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
+              className="w-full border border-purple-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
               rows={3}
-              placeholder="例: 部活の試合次第。7月中旬に確定予定"
+              placeholder="例: 部活の試合次第。7/10までに確定予定"
               value={localAvail.get(editingNoteDate)?.note ?? ''}
               onChange={(e) => setNote(editingNoteDate, e.target.value)}
             />
             <button
               onClick={() => setEditingNoteDate(null)}
-              className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700"
+              disabled={!(localAvail.get(editingNoteDate)?.note?.trim())}
+              className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               OK
             </button>
@@ -406,19 +425,23 @@ export default function StudentAvailability() {
             <h3 className="font-bold text-gray-800">
               未定メモ（{selectedDates.size}日分）
             </h3>
-            <p className="text-xs text-gray-500">未定の理由をまとめて入力できます（空欄でもOK）</p>
+            <p className="text-xs text-gray-500">
+              未定の理由と、<b>いつ頃確定しそうか</b>を必ず記入してください。<br />
+              <span className="text-gray-400">（例: "部活の試合日程が7/10に確定予定"、"バイトシフトが月末に確定"）</span>
+            </p>
             <textarea
               autoFocus
               className="w-full border border-purple-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
               rows={3}
-              placeholder="例: テスト期間のため。7月下旬に確定予定"
+              placeholder="例: テスト期間のため。7/20までに確定予定"
               value={batchNote}
               onChange={(e) => setBatchNote(e.target.value)}
             />
             <div className="flex gap-2">
               <button
                 onClick={confirmUndecidedWithNote}
-                className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700"
+                disabled={!batchNote.trim()}
+                className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 未定にする
               </button>
@@ -430,6 +453,13 @@ export default function StudentAvailability() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 保存エラー表示 */}
+      {saveError && (
+        <div className="fixed bottom-20 left-4 right-4 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm shadow-lg z-50">
+          {saveError}
         </div>
       )}
 

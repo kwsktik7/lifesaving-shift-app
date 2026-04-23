@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { ShiftAssignment, Student, SeasonDay, Availability } from '@/types';
+import { sortStudents } from '@/utils/studentSort';
 
 interface Props {
   days: SeasonDay[];
@@ -28,7 +29,11 @@ export default function ShiftGrid({
   hidePayType = false,
 }: Props) {
   const openDays = days.filter((d) => d.isOpen);
-  const activeStudents = students.filter((s) => s.isActive);
+  // 監視長→副監視長→3年→4年→2年→1年→その他 の順で統一
+  const activeStudents = useMemo(
+    () => sortStudents(students.filter((s) => s.isActive)),
+    [students]
+  );
 
   // shiftMap: "studentId:date" -> ShiftAssignment
   const shiftMap = useMemo(() => {
@@ -143,7 +148,7 @@ export default function ShiftGrid({
                     {student.isLeader && <span className="text-red-500" style={{ fontSize: '9px' }}>★</span>}
                     {student.hasPwc && <span className="text-blue-500" style={{ fontSize: '9px' }}>P</span>}
                     <span className="truncate">{student.name}</span>
-                    {student.grade && <span className="text-gray-400 ml-0.5 shrink-0" style={{ fontSize: '9px' }}>{student.grade.replace('年', '')}</span>}
+                    {student.grade && <span className="text-gray-400 ml-0.5 shrink-0" style={{ fontSize: '9px' }}>{student.grade}</span>}
                   </span>
                 </td>
                 {openDays.map((d) => {
