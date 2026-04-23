@@ -6,9 +6,9 @@ import { useShiftStore } from '@/store/shiftStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Check, X, Plus } from 'lucide-react';
+import type { Student, ShiftAssignment } from '@/types';
 import ShiftGrid from '@/components/ShiftGrid';
 import { sortStudents } from '@/utils/studentSort';
-// 単一表化により StudentSection / Student, ShiftAssignment import は不要になった
 
 export default function AdminShiftEdit() {
   const { days, updateDay } = useSeasonStore();
@@ -100,8 +100,13 @@ export default function AdminShiftEdit() {
             </button>
           )}
 
-          {/* Available students table - 単一表。sortStudents順で 監視長→副監視長→3→4→2→1 */}
+          {/* Available students - 監視長/副監視長 / PWC免許保持者 / その他 の3枠に分けて表示。
+              各枠内は sortStudents 順(監視長→副監視長→3→4→2→1)で並ぶ。
+              availableStudents が既に sortStudents 済みなので filter した結果も順序維持される。 */}
           {(() => {
+            const leaders = availableStudents.filter((s) => s.isLeader);
+            const pwcHolders = availableStudents.filter((s) => s.hasPwc && !s.isLeader);
+            const others = availableStudents.filter((s) => !s.isLeader && !s.hasPwc);
             const hasLeaderOnShift = dayShifts.some((ds) => {
               const st = activeStudents.find((s) => s.id === ds.studentId);
               return st?.isLeader;
@@ -128,65 +133,31 @@ export default function AdminShiftEdit() {
                   </div>
                 </div>
 
-                {availableStudents.length === 0 ? (
+                {leaders.length > 0 && (
+                  <StudentSection
+                    title="監視長・副監視長" titleColor="text-red-700" bgColor="bg-red-50" borderColor="border-red-200"
+                    students={leaders} dayShifts={dayShifts}
+                    onAdd={handleAddStudent} onRemove={removeShift}
+                  />
+                )}
+                {pwcHolders.length > 0 && (
+                  <StudentSection
+                    title="PWC免許保持者" titleColor="text-blue-700" bgColor="bg-blue-50" borderColor="border-blue-200"
+                    students={pwcHolders} dayShifts={dayShifts}
+                    onAdd={handleAddStudent} onRemove={removeShift}
+                  />
+                )}
+                {others.length > 0 && (
+                  <StudentSection
+                    title="その他" titleColor="text-gray-700" bgColor="bg-gray-50" borderColor="border-gray-200"
+                    students={others} dayShifts={dayShifts}
+                    onAdd={handleAddStudent} onRemove={removeShift}
+                  />
+                )}
+
+                {availableStudents.length === 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-gray-400 text-sm">
                     この日に○を提出した学生がいません
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50">
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">氏名</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-16">学年</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">役職</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-20">状態</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-16">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {availableStudents.map((student) => {
-                          const shift = dayShifts.find((s) => s.studentId === student.id);
-                          return (
-                            <tr key={student.id} className={`hover:bg-gray-50 ${shift ? 'bg-blue-50/30' : ''}`}>
-                              <td className="px-4 py-3 font-medium text-gray-800">
-                                {student.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                                {student.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                                {student.name}
-                              </td>
-                              <td className="px-4 py-3 text-center text-xs text-gray-500">{student.grade}</td>
-                              <td className="px-4 py-3 text-xs text-gray-500">{student.role}</td>
-                              <td className="px-4 py-3 text-center">
-                                {shift ? (
-                                  <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                                    出勤
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300 text-xs">未割当</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                {shift ? (
-                                  <button
-                                    onClick={() => removeShift(shift.id)}
-                                    className="text-red-400 hover:text-red-600 transition-colors"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleAddStudent(student.id)}
-                                    className="text-blue-500 hover:text-blue-700 transition-colors"
-                                  >
-                                    <Plus size={16} />
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
                   </div>
                 )}
               </div>
@@ -214,3 +185,74 @@ export default function AdminShiftEdit() {
   );
 }
 
+function StudentSection({
+  title, titleColor, bgColor, borderColor, students, dayShifts, onAdd, onRemove,
+}: {
+  title: string;
+  titleColor: string;
+  bgColor: string;
+  borderColor: string;
+  students: Student[];
+  dayShifts: ShiftAssignment[];
+  onAdd: (studentId: string) => void;
+  onRemove: (shiftId: string) => void;
+}) {
+  if (students.length === 0) return null;
+  return (
+    <div className={`rounded-xl border ${borderColor} overflow-hidden`}>
+      <div className={`px-4 py-2 ${bgColor} border-b ${borderColor}`}>
+        <span className={`text-xs font-bold ${titleColor}`}>{title} ({students.length}名)</span>
+      </div>
+      <table className="w-full text-sm bg-white">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50">
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">氏名</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-16">学年</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-20">状態</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 w-16">操作</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {students.map((student) => {
+            const shift = dayShifts.find((s) => s.studentId === student.id);
+            return (
+              <tr key={student.id} className={`hover:bg-gray-50 ${shift ? 'bg-blue-50/30' : ''}`}>
+                <td className="px-4 py-3 font-medium text-gray-800">
+                  {student.name}
+                  {student.role && <span className="ml-2 text-xs text-gray-400">{student.role}</span>}
+                </td>
+                <td className="px-4 py-3 text-center text-xs text-gray-500">{student.grade}</td>
+                <td className="px-4 py-3 text-center">
+                  {shift ? (
+                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                      出勤
+                    </span>
+                  ) : (
+                    <span className="text-gray-300 text-xs">未割当</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {shift ? (
+                    <button
+                      onClick={() => onRemove(shift.id)}
+                      className="text-red-400 hover:text-red-600 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onAdd(student.id)}
+                      className="text-blue-500 hover:text-blue-700 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
