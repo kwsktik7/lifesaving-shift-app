@@ -26,6 +26,7 @@ import AdminSettings from '@/pages/admin/AdminSettings';
 // Student pages
 import StudentHome from '@/pages/student/StudentHome';
 import StudentAvailability from '@/pages/student/StudentAvailability';
+import StudentProfile from '@/pages/student/StudentProfile';
 
 function RequireAuth({ role, children }: { role: 'admin' | 'student'; children: React.ReactNode }) {
   const session = getSession();
@@ -85,6 +86,7 @@ export default function App() {
         >
           <Route index element={<StudentHome />} />
           <Route path="availability" element={<StudentAvailability />} />
+          <Route path="profile" element={<StudentProfile />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

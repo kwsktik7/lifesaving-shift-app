@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { useStudentStore } from '@/store/studentStore';
 import { getSession } from '@/utils/auth';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Check, Pencil, CheckSquare, Square, ChevronDown, Lock } from 'lucide-react';
+import { Check, Pencil, CheckSquare, Square, ChevronDown, Lock, User, ChevronRight } from 'lucide-react';
 import type { AvailabilityStatus } from '@/types';
 
 const STATUS_OPTIONS: { value: AvailabilityStatus | 'clear'; label: string; color: string }[] = [
@@ -28,6 +30,8 @@ export default function StudentAvailability() {
   const { days } = useSeasonStore();
   const { availabilities, setBulk } = useAvailabilityStore();
   const { settings } = useSettingsStore();
+  const { students } = useStudentStore();
+  const me = students.find((s) => s.id === studentId);
 
   const locked = !!settings.availabilityLocked;
   const openDays = days.filter((d) => d.isOpen);
@@ -259,6 +263,7 @@ export default function StudentAvailability() {
   if (!editing || locked) {
     return (
       <div className="p-4">
+        {me && <MyProfileCard student={me} />}
         <div className="mb-4">
           <h1 className="text-xl font-bold text-gray-800">可否提出</h1>
         </div>
@@ -333,6 +338,7 @@ export default function StudentAvailability() {
   // 編集画面
   return (
     <div className="p-4 pb-48">
+      {me && <MyProfileCard student={me} />}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold text-gray-800">可否提出</h1>
@@ -526,6 +532,32 @@ export default function StudentAvailability() {
         )}
       </div>
     </div>
+  );
+}
+
+/** 自分のプロフィール情報を一目で確認 & 編集画面へのリンク */
+function MyProfileCard({ student }: { student: { name: string; grade: string; role: string; hasPwc: boolean } }) {
+  return (
+    <Link
+      to="/student/profile"
+      className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 hover:bg-blue-100 transition-colors"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+          <User size={16} className="text-white" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-gray-800 truncate">{student.name}</p>
+          <p className="text-[11px] text-gray-500 truncate">
+            {student.grade} / {student.role || 'ガード'} / PWC: {student.hasPwc ? 'あり' : 'なし'}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 text-xs text-blue-600 font-medium flex-shrink-0">
+        マイページ
+        <ChevronRight size={14} />
+      </div>
+    </Link>
   );
 }
 
