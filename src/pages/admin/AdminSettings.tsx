@@ -4,7 +4,8 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
-import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
+import { Trash2, Pencil, Check, X, GripVertical, Wand2 } from 'lucide-react';
+import { seedZushi2026 } from '@/dev/seedData';
 import { parseISO, format } from 'date-fns';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
@@ -169,6 +170,23 @@ export default function AdminSettings() {
   ];
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleLeader, setNewRoleLeader] = useState(false);
+
+  // [一時] 仮データ再投入(v2: 終日多め/am・pmは7月のみ/男沢は全日yes固定)
+  const [seeding, setSeeding] = useState(false);
+  async function runSeed() {
+    if (!confirm('【破壊的操作】既存の学生・シフト・可否・seasonDaysを全削除してから、2026名簿68人+ランダムavailability(終日多め)を投入します。本当に実行しますか?')) return;
+    if (!confirm('最終確認: 本当に全削除して仮データに差し替えますか?')) return;
+    setSeeding(true);
+    try {
+      const r = await seedZushi2026();
+      setSuccessMsg(`投入完了: 学生${r.students}/日${r.days}/可否${r.availability}件。ページを再読込します`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`投入失敗: ${msg}`);
+      setSeeding(false);
+    }
+  }
 
   // ドラッグ並び替え: 掴んでる行のインデックスと、ドラッグ中にホバーしてる挿入位置
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -682,6 +700,24 @@ export default function AdminSettings() {
                 );
               })
           )}
+        </div>
+      </section>
+
+      {/* [一時] 仮データ再投入 v2 */}
+      <section>
+        <h2 className="text-base font-semibold text-purple-700 mb-2">[開発用] 仮データ再投入(v2: 終日多め)</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          全データ削除 → 2026名簿68人を再投入。可否は終日可中心(7月のみ稀に午前/午後/未定)、男沢 壮真は全日終日可で固定。
+        </p>
+        <div className="bg-white rounded-xl border border-purple-300 p-4">
+          <button
+            onClick={runSeed}
+            disabled={seeding}
+            className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
+          >
+            <Wand2 size={16} />
+            {seeding ? '投入中... (数十秒かかる)' : '仮データを再投入(終日多めバージョン)'}
+          </button>
         </div>
       </section>
 
