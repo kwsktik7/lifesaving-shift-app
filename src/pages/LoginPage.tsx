@@ -19,6 +19,7 @@ const DEFAULT_ROLES: { name: string; isLeader: boolean }[] = [
   { name: 'ガード', isLeader: false },
   { name: '監視長', isLeader: true },
   { name: '副監視長', isLeader: true },
+  { name: 'その他', isLeader: false },
 ];
 
 export default function LoginPage() {
@@ -43,8 +44,12 @@ export default function LoginPage() {
   const { settings, _ready: settingsReady, verifyAdminPassword, setAdminPassword, verifyLeaderPassword } = useSettingsStore();
   const navigate = useNavigate();
 
-  // 役職リストは設定から動的に取得。未設定時はデフォルト
-  const roleOptions = (settings.roles && settings.roles.length > 0) ? settings.roles : DEFAULT_ROLES;
+  // 役職リストは設定から動的に取得。未設定時はデフォルト。
+  // 「その他」は新入生（役職未定）向けに必ず末尾に表示する。
+  const baseRoles = (settings.roles && settings.roles.length > 0) ? settings.roles : DEFAULT_ROLES;
+  const roleOptions = baseRoles.some((r) => r.name === 'その他')
+    ? baseRoles
+    : [...baseRoles, { name: 'その他', isLeader: false }];
   const selectedRoleDef = roleOptions.find((r) => r.name === signupRole);
 
   const activeStudents = sortStudents(students.filter((s) => s.isActive));

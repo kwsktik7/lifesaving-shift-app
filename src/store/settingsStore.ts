@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     { name: 'ガード', isLeader: false },
     { name: '監視長', isLeader: true },
     { name: '副監視長', isLeader: true },
+    { name: 'その他', isLeader: false },
   ],
 };
 
