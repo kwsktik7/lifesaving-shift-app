@@ -77,9 +77,13 @@ export function exportShiftScheduleXlsx(
 
   const sheetName = monthLabel ? `シフト表_${monthLabel}` : 'シフト表';
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  // ファイル名はクラブ名を含めない。Drive/Dropboxで同一ファイル上書きしてLINE共有リンクを
+  // 再利用するため、ファイル名が固定であることが重要 (クラブ名変更時のリンク切れを防ぐ)。
+  // clubName 引数はシート内のタイトル等に使う可能性があるので削除はしない。
+  void clubName;
   const fileName = monthLabel
-    ? `シフト表_${monthLabel}_${clubName}.xlsx`
-    : `シフト表_${clubName}.xlsx`;
+    ? `シフト表_${monthLabel}.xlsx`
+    : `シフト表.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
 
