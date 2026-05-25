@@ -132,38 +132,81 @@ export default function LoginPage() {
         </div>
 
         {tab === 'student' ? (
-          <form onSubmit={handleStudentLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">名前を選択</label>
-              <select
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={selectedStudent}
-                onChange={(e) => {
-                  setSelectedStudent(e.target.value);
-                  setPin('');
-                  setPinConfirm('');
-                  setError('');
-                }}
-              >
-                <option value="">-- 選択してください --</option>
-                {activeStudents.map((s) => (
-                  <option key={s.id} value={s.id}>{s.grade} {s.name}</option>
-                ))}
-              </select>
+          !me ? (
+            // Step 1: 名前選択のみ
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">名前を選択してください</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  value={selectedStudent}
+                  onChange={(e) => {
+                    setSelectedStudent(e.target.value);
+                    setPin('');
+                    setPinConfirm('');
+                    setError('');
+                  }}
+                >
+                  <option value="">-- 選択してください --</option>
+                  {activeStudents.map((s) => (
+                    <option key={s.id} value={s.id}>{s.grade} {s.name}</option>
+                  ))}
+                </select>
+              </div>
               {activeStudents.length === 0 && (
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-gray-500">
                   まだ学生が登録されていません。管理者に登録を依頼してください。
                 </p>
               )}
             </div>
-            {needsInitialPin ? (
-              <>
-                <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg p-3 leading-relaxed">
-                  まだPINが設定されていません。<br />
-                  ここで設定したPINが次回以降のログインに使われます。<strong>他の人には教えないでください。</strong>
-                </div>
+          ) : (
+            // Step 2: 名前選択後 (ウェルカム + パスワード設定/入力)
+            <form onSubmit={handleStudentLogin} className="space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-center">
+                <p className="text-base font-medium text-gray-800">
+                  <span className="font-bold">{me.name}</span> さん、ようこそ
+                </p>
+                <p className="text-sm text-gray-600 mt-1.5">
+                  {needsInitialPin
+                    ? 'パスワード（4桁の数字）を設定してください'
+                    : 'パスワードを入力してください'}
+                </p>
+              </div>
+              {needsInitialPin ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">新しいパスワード（4桁）</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="0000"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">確認のためもう一度</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={pinConfirm}
+                      onChange={(e) => setPinConfirm(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="0000"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    ここで設定したパスワードが次回以降のログインに使われます。
+                    <strong className="text-gray-700">他の人には教えないでください。</strong>
+                  </p>
+                </>
+              ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">新しいPIN（4桁）</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">パスワード（4桁）</label>
                   <input
                     type="password"
                     inputMode="numeric"
@@ -175,46 +218,33 @@ export default function LoginPage() {
                     autoFocus
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">確認のためもう一度</label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={pinConfirm}
-                    onChange={(e) => setPinConfirm(e.target.value.replace(/[^0-9]/g, ''))}
-                    placeholder="0000"
-                  />
-                </div>
-              </>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">PIN（4桁）</label>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={4}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
-                  placeholder="0000"
-                />
-              </div>
-            )}
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading || !selectedStudent}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {loading
-                ? '処理中...'
-                : needsInitialPin
-                  ? 'PINを設定してログイン'
-                  : 'ログイン'}
-            </button>
-          </form>
+              )}
+              {error && <p className="text-red-500 text-sm">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {loading
+                  ? '処理中...'
+                  : needsInitialPin
+                    ? 'パスワードを設定してログイン'
+                    : 'ログイン'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStudent('');
+                  setPin('');
+                  setPinConfirm('');
+                  setError('');
+                }}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                名前を選び直す
+              </button>
+            </form>
+          )
         ) : (
           <form onSubmit={handleAdminLogin} className="space-y-4">
             {!settingsReady ? (
