@@ -25,12 +25,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   monthlyBudgets: {},
   allocatedMonths: [],
   availabilityLocked: false,
-  roles: [
-    { name: 'ガード', isLeader: false },
-    { name: '監視長', isLeader: true },
-    { name: '副監視長', isLeader: true },
-    { name: 'その他', isLeader: false },
-  ],
 };
 
 const COLLECTION = 'settings';
@@ -53,7 +47,6 @@ export const useSettingsStore = isFirebaseConfigured
             monthlyBudgets: settings.monthlyBudgets ?? {},
             allocatedMonths: settings.allocatedMonths ?? [],
             availabilityLocked: settings.availabilityLocked ?? false,
-            roles: settings.roles ?? DEFAULT_SETTINGS.roles,
           };
           set({ settings: merged, _ready: true });
         },

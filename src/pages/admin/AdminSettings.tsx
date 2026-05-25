@@ -4,8 +4,24 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
-import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
+import { Trash2, Pencil, Check, X } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
+
+/**
+ * 固定の役職リスト。新規学生作成時の選択肢に使う。
+ * 監視長/副監視長のみシフト生成に影響する役職 (isLeader=true)。
+ * 名簿に合わせて全クラブ共通の固定リストとして扱う。
+ */
+const FIXED_ROLES: { name: string; isLeader: boolean }[] = [
+  { name: '監視長', isLeader: true },
+  { name: '副監視長', isLeader: true },
+  { name: 'ガード', isLeader: false },
+  { name: '競技', isLeader: false },
+  { name: '器材', isLeader: false },
+  { name: 'レク', isLeader: false },
+  { name: 'ジュニア', isLeader: false },
+  { name: 'その他', isLeader: false },
+];
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -104,7 +120,7 @@ export default function AdminSettings() {
     }
     setAddingStudent(true);
     try {
-      const selectedRole = currentRoles.find((r) => r.name === newStudentRole);
+      const selectedRole = FIXED_ROLES.find((r) => r.name === newStudentRole);
       await addStudent({
         name,
         nameKana: '',
@@ -207,76 +223,6 @@ export default function AdminSettings() {
   // パスワード変更状態
   const [savingAdminPw, setSavingAdminPw] = useState(false);
   const [savingLeaderPw, setSavingLeaderPw] = useState(false);
-
-  // 役職リスト編集
-  const currentRoles = settings.roles ?? [
-    { name: 'ガード', isLeader: false },
-    { name: '監視長', isLeader: true },
-    { name: '副監視長', isLeader: true },
-  ];
-  const [newRoleName, setNewRoleName] = useState('');
-  const [newRoleLeader, setNewRoleLeader] = useState(false);
-
-  // ドラッグ並び替え: 掴んでる行のインデックスと、ドラッグ中にホバーしてる挿入位置
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
-
-  async function moveRole(from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || from >= currentRoles.length || to >= currentRoles.length) return;
-    const next = [...currentRoles];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    try {
-      await updateSettings({ roles: next });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`並び替えに失敗しました: ${msg}`);
-    }
-  }
-
-  async function addRole() {
-    const name = newRoleName.trim();
-    if (!name) return;
-    if (currentRoles.some((r) => r.name === name)) {
-      setErrorMsg(`役職「${name}」は既に追加されています`);
-      return;
-    }
-    try {
-      await updateSettings({ roles: [...currentRoles, { name, isLeader: newRoleLeader }] });
-      setNewRoleName('');
-      setNewRoleLeader(false);
-      setErrorMsg('');
-      setSuccessMsg(`役職「${name}」を追加しました`);
-      setTimeout(() => setSuccessMsg(''), 2000);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`追加に失敗しました: ${msg}`);
-    }
-  }
-
-  async function toggleRoleLeader(idx: number) {
-    const next = currentRoles.map((r, i) => (i === idx ? { ...r, isLeader: !r.isLeader } : r));
-    try {
-      await updateSettings({ roles: next });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`更新に失敗しました: ${msg}`);
-    }
-  }
-
-  async function removeRole(idx: number) {
-    const target = currentRoles[idx];
-    if (!confirm(`役職「${target.name}」を削除します。よろしいですか？`)) return;
-    const next = currentRoles.filter((_, i) => i !== idx);
-    try {
-      await updateSettings({ roles: next });
-      setSuccessMsg(`役職「${target.name}」を削除しました`);
-      setTimeout(() => setSuccessMsg(''), 2000);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`削除に失敗しました: ${msg}`);
-    }
-  }
 
   async function handleSetAdminPassword() {
     if (!newAdminPass) return;
@@ -509,112 +455,6 @@ export default function AdminSettings() {
         </div>
       </section>
 
-      {/* Role list */}
-      <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-2">役職リスト</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          学生のプロフィール画面と「学生を追加」フォームで選択できる役職の一覧。「要パスワード」にチェックすると、学生がプロフィール画面で選択する際に監視長パスワードが要求されます(シフト生成への影響があるため)。
-        </p>
-        <p className="text-xs text-gray-400 mb-2">左端のハンドル（⋮⋮）をドラッグして並び替えできます。</p>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-          {currentRoles.length === 0 ? (
-            <p className="text-sm text-gray-400">役職が登録されていません</p>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {currentRoles.map((r, idx) => {
-                const isDragging = dragIndex === idx;
-                const isOver = overIndex === idx && dragIndex !== null && dragIndex !== idx;
-                return (
-                  <div
-                    key={`${r.name}-${idx}`}
-                    draggable
-                    onDragStart={(e) => {
-                      setDragIndex(idx);
-                      e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      if (overIndex !== idx) setOverIndex(idx);
-                    }}
-                    onDragLeave={() => {
-                      if (overIndex === idx) setOverIndex(null);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragIndex !== null && dragIndex !== idx) {
-                        moveRole(dragIndex, idx);
-                      }
-                      setDragIndex(null);
-                      setOverIndex(null);
-                    }}
-                    onDragEnd={() => {
-                      setDragIndex(null);
-                      setOverIndex(null);
-                    }}
-                    className={`flex items-center justify-between py-2 px-1 rounded transition-colors ${
-                      isDragging ? 'opacity-40' : ''
-                    } ${isOver ? 'bg-blue-50 border-t-2 border-blue-400' : ''}`}
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <GripVertical size={16} className="text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
-                      <span className="text-sm text-gray-800 font-medium truncate">{r.name}</span>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={r.isLeader}
-                          onChange={() => toggleRoleLeader(idx)}
-                          className="w-3.5 h-3.5"
-                        />
-                        要パスワード
-                      </label>
-                      <button
-                        onClick={() => removeRole(idx)}
-                        className="text-red-400 hover:text-red-600 transition-colors"
-                        title="削除"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="pt-2 border-t border-gray-100 flex gap-2 flex-wrap">
-            <input
-              type="text"
-              placeholder="新しい役職名"
-              className="flex-1 min-w-[160px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={newRoleName}
-              onChange={(e) => setNewRoleName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addRole(); }}
-            />
-            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={newRoleLeader}
-                onChange={(e) => setNewRoleLeader(e.target.checked)}
-                className="w-3.5 h-3.5"
-              />
-              要パスワード
-            </label>
-            <button
-              onClick={addRole}
-              disabled={!newRoleName.trim()}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                newRoleName.trim()
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              追加
-            </button>
-          </div>
-        </div>
-      </section>
 
       {/* Student management */}
       <section>
@@ -648,7 +488,7 @@ export default function AdminSettings() {
               onChange={(e) => setNewStudentRole(e.target.value)}
             >
               <option value="">役職（任意）</option>
-              {currentRoles.map((r) => (
+              {FIXED_ROLES.map((r) => (
                 <option key={r.name} value={r.name}>{r.name}</option>
               ))}
             </select>
