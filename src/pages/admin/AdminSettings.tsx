@@ -3,41 +3,10 @@ import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
-import { useShiftStore } from '@/store/shiftStore';
-import { firestoreBatchWrite } from '@/lib/firestoreSync';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
-
-/**
- * テキストエリアに貼られた表データを 1 行ずつのフィールド配列にする。
- * タブが含まれる行はタブ区切り、そうでなければカンマ区切り。空行は無視。
- */
-function parseRoster(text: string): string[][] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const sep = line.includes('\t') ? '\t' : ',';
-      return line.split(sep).map((cell) => cell.trim());
-    });
-}
-
-/** PWC 表記揺れを true/false に正規化 */
-function parsePwc(s: string | undefined): boolean {
-  if (!s) return false;
-  const v = s.trim().toLowerCase();
-  return ['yes', 'y', 'true', '1', 'はい', 'あり', '有', '○', '◯', 'o'].includes(v);
-}
-
-/** 学年表記揺れの正規化: "1" → "1年" / "1年" → "1年" / GRADE_OPTIONS 外なら空文字 */
-function normalizeGrade(s: string | undefined): string {
-  if (!s) return '';
-  const raw = s.trim();
-  const withSuffix = raw.endsWith('年') ? raw : `${raw}年`;
-  return GRADE_OPTIONS.includes(withSuffix) ? withSuffix : '';
-}
+import { INITIAL_ROSTER } from '@/lib/initialRoster';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -60,7 +29,6 @@ export default function AdminSettings() {
   const { students, addStudent, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
   const { settings, updateSettings, setAdminPassword, verifyAdminPassword, setLeaderPassword } = useSettingsStore();
   const { availabilities } = useAvailabilityStore();
-  const { shifts } = useShiftStore();
   useSeasonStore();
 
   // studentId → 提出件数(availableなもののみ) の集計
@@ -124,86 +92,44 @@ export default function AdminSettings() {
     }
   }
 
-  // --- 孤児データクリーンアップ ---
-  const orphanShifts = useMemo(() => {
-    const ids = new Set(students.map((s) => s.id));
-    return shifts.filter((s) => !ids.has(s.studentId));
-  }, [students, shifts]);
-  const orphanAvail = useMemo(() => {
-    const ids = new Set(students.map((s) => s.id));
-    return availabilities.filter((a) => !ids.has(a.studentId));
-  }, [students, availabilities]);
-  const orphanTotal = orphanShifts.length + orphanAvail.length;
+  // --- 初期名簿セットアップ ---
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupPw, setSetupPw] = useState('');
+  const [setupErr, setSetupErr] = useState('');
+  const [setupRunning, setSetupRunning] = useState(false);
+  const [setupProgress, setSetupProgress] = useState(0);
 
-  // 管理者パスワード確認モーダル (孤児削除用)
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [cleanupPw, setCleanupPw] = useState('');
-  const [cleanupErr, setCleanupErr] = useState('');
-  const [cleaningUp, setCleaningUp] = useState(false);
-
-  async function confirmCleanup() {
-    if (!verifyAdminPassword(cleanupPw)) {
-      setCleanupErr('管理者パスワードが違います');
+  async function runInitialSetup() {
+    if (!verifyAdminPassword(setupPw)) {
+      setSetupErr('管理者パスワードが違います');
       return;
     }
-    setCleaningUp(true);
-    setCleanupErr('');
+    setSetupRunning(true);
+    setSetupErr('');
+    setSetupProgress(0);
     try {
-      // Firestore batch は 500 op 上限。安全のため 400 件ずつチャンクして送る。
-      const ops: { type: 'delete'; collection: string; docId: string }[] = [
-        ...orphanShifts.map((s) => ({ type: 'delete' as const, collection: 'shifts', docId: s.id })),
-        ...orphanAvail.map((a) => ({ type: 'delete' as const, collection: 'availability', docId: a.id })),
-      ];
-      for (let i = 0; i < ops.length; i += 400) {
-        await firestoreBatchWrite(ops.slice(i, i + 400));
+      // 既存の役職一覧に PDF で登場する役職を merge
+      const presentRoles = new Set(INITIAL_ROSTER.map((r) => r.role).filter((r) => r));
+      const existingRoleNames = new Set(currentRoles.map((r) => r.name));
+      const mergedRoles = [...currentRoles];
+      for (const name of presentRoles) {
+        if (!existingRoleNames.has(name)) {
+          const isLeader = name === '監視長' || name === '副監視長';
+          mergedRoles.push({ name, isLeader });
+        }
       }
-      setSuccessMsg(`不要データを ${ops.length} 件削除しました`);
-      setTimeout(() => setSuccessMsg(''), 3000);
-      setCleanupOpen(false);
-      setCleanupPw('');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setCleanupErr(`削除に失敗しました: ${msg}`);
-    } finally {
-      setCleaningUp(false);
-    }
-  }
+      if (mergedRoles.length !== currentRoles.length) {
+        await updateSettings({ roles: mergedRoles });
+      }
 
-  // --- 学生一括登録 ---
-  const [rosterText, setRosterText] = useState('');
-  const [bulkRunning, setBulkRunning] = useState(false);
-
-  type RosterRow = { name: string; grade: string; role: string; hasPwc: boolean; skip?: string };
-  const rosterRows: RosterRow[] = useMemo(() => {
-    const rows = parseRoster(rosterText);
-    return rows.map(([name, grade, role, pwc]) => {
-      const trimmedName = (name ?? '').trim();
-      const normalizedGrade = normalizeGrade(grade);
-      const trimmedRole = (role ?? '').trim();
-      let skip: string | undefined;
-      if (!trimmedName) skip = '氏名が空';
-      else if (students.some((s) => s.name === trimmedName && s.isActive)) skip = '既に登録済';
-      return {
-        name: trimmedName,
-        grade: normalizedGrade,
-        role: trimmedRole,
-        hasPwc: parsePwc(pwc),
-        skip,
-      };
-    });
-  }, [rosterText, students]);
-
-  const rosterValidCount = rosterRows.filter((r) => !r.skip).length;
-
-  async function runBulkRegister() {
-    if (rosterValidCount === 0) return;
-    setBulkRunning(true);
-    setErrorMsg('');
-    try {
-      let ok = 0;
-      for (const row of rosterRows) {
-        if (row.skip) continue;
-        const selectedRole = currentRoles.find((r) => r.name === row.role);
+      // 1人ずつ addStudent (cascade などはせず追加のみ)
+      for (let i = 0; i < INITIAL_ROSTER.length; i++) {
+        const row = INITIAL_ROSTER[i];
+        // 既に同名の active 学生がいたらスキップ
+        if (students.some((s) => s.name === row.name && s.isActive)) {
+          setSetupProgress(i + 1);
+          continue;
+        }
         await addStudent({
           name: row.name,
           nameKana: '',
@@ -212,18 +138,20 @@ export default function AdminSettings() {
           grade: row.grade,
           role: row.role,
           hasPwc: row.hasPwc,
-          isLeader: selectedRole?.isLeader ?? false,
+          isLeader: row.role === '監視長' || row.role === '副監視長',
+          order: row.order,
         });
-        ok += 1;
+        setSetupProgress(i + 1);
       }
-      setRosterText('');
-      setSuccessMsg(`${ok} 名の学生を登録しました。PINは各自で初回ログイン時に設定します。`);
-      setTimeout(() => setSuccessMsg(''), 4000);
+      setSuccessMsg(`初期名簿 ${INITIAL_ROSTER.length} 名を登録しました。PINは各自で初回ログイン時に設定します。`);
+      setTimeout(() => setSuccessMsg(''), 5000);
+      setSetupOpen(false);
+      setSetupPw('');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`一括登録に失敗しました: ${msg}`);
+      setSetupErr(`登録に失敗しました: ${msg}`);
     } finally {
-      setBulkRunning(false);
+      setSetupRunning(false);
     }
   }
 
@@ -816,73 +744,23 @@ export default function AdminSettings() {
           </p>
         </div>
 
-        {/* 一括登録 */}
-        <details className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
-          <summary className="text-sm font-medium text-gray-700 cursor-pointer select-none">
-            名簿から一括登録
-          </summary>
-          <div className="mt-3 space-y-3">
-            <p className="text-xs text-gray-500 leading-relaxed">
-              1 行に 1 名。<code className="bg-gray-100 px-1 rounded">氏名,学年,役職,PWC</code> の順。
-              タブ区切りでも可。学年は <code className="bg-gray-100 px-1 rounded">3</code> or <code className="bg-gray-100 px-1 rounded">3年</code>、
-              PWC は <code className="bg-gray-100 px-1 rounded">yes / no</code>（はい/あり/○ も可）。
-            </p>
-            <textarea
-              rows={6}
-              spellCheck={false}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={'山田 太郎,3年,ガード,no\n佐藤 花子,2年,監視長,yes'}
-              value={rosterText}
-              onChange={(e) => setRosterText(e.target.value)}
-            />
-            {rosterRows.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-2 py-1 text-left">氏名</th>
-                      <th className="px-2 py-1 text-left">学年</th>
-                      <th className="px-2 py-1 text-left">役職</th>
-                      <th className="px-2 py-1 text-center">PWC</th>
-                      <th className="px-2 py-1 text-left">状態</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {rosterRows.map((r, i) => (
-                      <tr key={i} className={r.skip ? 'bg-amber-50' : ''}>
-                        <td className="px-2 py-1">{r.name || <span className="text-red-400">（空）</span>}</td>
-                        <td className="px-2 py-1">{r.grade || <span className="text-amber-600">未認識</span>}</td>
-                        <td className="px-2 py-1">{r.role || <span className="text-gray-400">なし</span>}</td>
-                        <td className="px-2 py-1 text-center">{r.hasPwc ? '○' : ''}</td>
-                        <td className="px-2 py-1">
-                          {r.skip
-                            ? <span className="text-amber-700">{r.skip} (スキップ)</span>
-                            : <span className="text-green-700">登録予定</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs text-gray-500">
-                登録: <strong>{rosterValidCount}</strong> 名 / 全{rosterRows.length}行
+        {/* 初期名簿セットアップ (PDF#1〜#53) */}
+        <div className="bg-white rounded-xl border border-blue-200 p-4 mb-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="text-sm">
+              <p className="text-gray-800 font-medium">2026シーズン初期名簿セットアップ</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                #1〜#53 を名簿順で登録。シフト表・勤怠表もこの順序で並びます。
               </p>
-              <button
-                onClick={runBulkRegister}
-                disabled={bulkRunning || rosterValidCount === 0}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  !bulkRunning && rosterValidCount > 0
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {bulkRunning ? '登録中...' : `${rosterValidCount} 名を一括登録`}
-              </button>
             </div>
+            <button
+              onClick={() => { setSetupOpen(true); setSetupPw(''); setSetupErr(''); setSetupProgress(0); }}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+            >
+              名簿を投入
+            </button>
           </div>
-        </details>
+        </div>
 
         {/* Student list */}
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
@@ -995,71 +873,46 @@ export default function AdminSettings() {
         </div>
       </section>
 
-      {/* データクリーンアップ */}
-      <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-2">データクリーンアップ</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          学生を削除した後に、その学生に紐づいていたシフト・可否データが孤児として残ることがあります。ここで一括削除できます。
-        </p>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="text-sm">
-              <p className="text-gray-700">
-                残存している不要データ: <strong className="text-red-700">{orphanTotal}</strong> 件
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                内訳: シフト/勤怠 {orphanShifts.length} 件、シフト希望 {orphanAvail.length} 件
-              </p>
-            </div>
-            <button
-              onClick={() => { setCleanupOpen(true); setCleanupPw(''); setCleanupErr(''); }}
-              disabled={orphanTotal === 0}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                orphanTotal > 0
-                  ? 'bg-red-600 text-white hover:bg-red-700'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              不要データを削除
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* クリーンアップ確認モーダル */}
-      {cleanupOpen && (
+      {/* 初期名簿セットアップ確認モーダル */}
+      {setupOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-base font-semibold text-gray-800 mb-2">不要データを削除</h3>
+            <h3 className="text-base font-semibold text-gray-800 mb-2">2026シーズン名簿を投入</h3>
             <p className="text-sm text-gray-600 mb-4">
-              削除されるレコード: <strong>{orphanTotal}</strong> 件<br />
-              （シフト/勤怠 {orphanShifts.length} 件、シフト希望 {orphanAvail.length} 件）<br />
-              この操作は取り消せません。管理者パスワードを入力してください。
+              #1〜#{INITIAL_ROSTER.length} を順番に登録します。<br />
+              既に同じ氏名で登録済の人はスキップされます。<br />
+              管理者パスワードを入力してください。
             </p>
             <input
               type="password"
               autoFocus
               placeholder="管理者パスワード"
-              value={cleanupPw}
-              onChange={(e) => { setCleanupPw(e.target.value); setCleanupErr(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') confirmCleanup(); }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-2"
+              value={setupPw}
+              onChange={(e) => { setSetupPw(e.target.value); setSetupErr(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') runInitialSetup(); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              disabled={setupRunning}
             />
-            {cleanupErr && <p className="text-red-500 text-xs mb-2">{cleanupErr}</p>}
+            {setupErr && <p className="text-red-500 text-xs mb-2">{setupErr}</p>}
+            {setupRunning && (
+              <p className="text-xs text-blue-700 mb-2">
+                登録中... {setupProgress} / {INITIAL_ROSTER.length}
+              </p>
+            )}
             <div className="flex justify-end gap-2 mt-4">
               <button
-                onClick={() => { setCleanupOpen(false); setCleanupPw(''); setCleanupErr(''); }}
-                disabled={cleaningUp}
+                onClick={() => { setSetupOpen(false); setSetupPw(''); setSetupErr(''); }}
+                disabled={setupRunning}
                 className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
               >
                 キャンセル
               </button>
               <button
-                onClick={confirmCleanup}
-                disabled={cleaningUp || !cleanupPw}
-                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                onClick={runInitialSetup}
+                disabled={setupRunning || !setupPw}
+                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {cleaningUp ? '削除中...' : '削除する'}
+                {setupRunning ? '登録中...' : '投入する'}
               </button>
             </div>
           </div>

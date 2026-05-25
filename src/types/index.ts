@@ -9,7 +9,12 @@ export interface Student {
   role: string;        // '監視長', 'ガード' etc.
   hasPwc: boolean;     // PWC免許保持者
   isLeader: boolean;   // 監視長 or 副監視長
-  /** セルフサインアップ時の誕生日MMDD (例: "0907")。PINと同一なので管理者に表示するための原本 */
+  /**
+   * 名簿順 (PDF #1〜#53)。シフト表・勤怠表で並び順を維持するために使う。
+   * 値が無い学生は末尾。同値内は氏名で安定ソート。
+   */
+  order?: number;
+  /** PIN の plaintext (管理者が表示するため)。学生がPINを設定した際に同時更新される */
   birthday?: string;
   bankAccount?: string;
 }

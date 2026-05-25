@@ -13,8 +13,9 @@ interface StudentState {
    * 学生を追加する。管理者から呼ばれる想定。
    * pin を空文字で渡すと pinHash も birthday も空のまま作成され、
    * 学生が初回ログイン時に自分で PIN を設定するフローになる。
+   * order は名簿順 (PDF#1〜) を渡す。省略時は undefined で末尾扱い。
    */
-  addStudent: (s: Omit<Student, 'id' | 'pinHash'> & { pin?: string; grade?: string; role?: string; hasPwc?: boolean; isLeader?: boolean }) => Promise<string>;
+  addStudent: (s: Omit<Student, 'id' | 'pinHash'> & { pin?: string; grade?: string; role?: string; hasPwc?: boolean; isLeader?: boolean; order?: number }) => Promise<string>;
   updateStudent: (id: string, patch: Partial<Omit<Student, 'id' | 'pinHash'>>) => void;
   /** PIN を更新する。pinHash と plaintext (birthday フィールド) の両方を更新する。 */
   updateStudentPin: (id: string, pin: string) => void;
@@ -53,7 +54,12 @@ export const useStudentStore = isFirebaseConfigured
           };
           set((state) => ({ students: [...state.students, student] }));
           const { id: _, ...docData } = student;
-          firestoreSet(COLLECTION, id, docData).catch((e) => console.warn('[students] addStudent', e));
+          // Firestore は undefined を許容しないので除外
+          const cleanDoc: Record<string, unknown> = { ...docData };
+          for (const k of Object.keys(cleanDoc)) {
+            if (cleanDoc[k] === undefined) delete cleanDoc[k];
+          }
+          firestoreSet(COLLECTION, id, cleanDoc).catch((e) => console.warn('[students] addStudent', e));
           return id;
         },
         updateStudent: async (id, patch) => {
