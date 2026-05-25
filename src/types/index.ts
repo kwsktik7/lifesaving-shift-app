@@ -56,8 +56,6 @@ export interface ShiftAssignment {
 
 export interface AppSettings {
   adminPasswordHash: string;
-  /** 監視長/副監視長を新規登録時に選択するためのパスワードハッシュ */
-  leaderPasswordHash: string;
   seasonStart: string; // "YYYY-MM-DD"
   seasonEnd: string;   // "YYYY-MM-DD"
   fullPayAmount: number; // 9100

@@ -42,7 +42,7 @@ function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: stri
 
 export default function AdminSettings() {
   const { students, addStudent, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
-  const { settings, updateSettings, setAdminPassword, verifyAdminPassword, setLeaderPassword } = useSettingsStore();
+  const { settings, updateSettings, setAdminPassword, verifyAdminPassword } = useSettingsStore();
   const { availabilities } = useAvailabilityStore();
   useSeasonStore();
 
@@ -56,7 +56,6 @@ export default function AdminSettings() {
   }, [availabilities]);
 
   const [newAdminPass, setNewAdminPass] = useState('');
-  const [newLeaderPass, setNewLeaderPass] = useState('');
 
   // 学生追加フォーム
   const [newStudentName, setNewStudentName] = useState('');
@@ -222,7 +221,6 @@ export default function AdminSettings() {
 
   // パスワード変更状態
   const [savingAdminPw, setSavingAdminPw] = useState(false);
-  const [savingLeaderPw, setSavingLeaderPw] = useState(false);
 
   async function handleSetAdminPassword() {
     if (!newAdminPass) return;
@@ -238,23 +236,6 @@ export default function AdminSettings() {
       setErrorMsg(`保存に失敗しました: ${msg}`);
     } finally {
       setSavingAdminPw(false);
-    }
-  }
-
-  async function handleSetLeaderPassword() {
-    if (!newLeaderPass) return;
-    setSavingLeaderPw(true);
-    try {
-      await setLeaderPassword(newLeaderPass);
-      setNewLeaderPass('');
-      setSuccessMsg('監視長パスワードを変更しました');
-      setTimeout(() => setSuccessMsg(''), 3000);
-      setErrorMsg('');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setErrorMsg(`保存に失敗しました: ${msg}`);
-    } finally {
-      setSavingLeaderPw(false);
     }
   }
 
@@ -420,41 +401,6 @@ export default function AdminSettings() {
           </div>
         </div>
       </section>
-
-      {/* Leader password */}
-      <section>
-        <h2 className="text-base font-semibold text-gray-700 mb-2">監視長パスワード変更</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          学生のプロフィール画面で「監視長」「副監視長」を選択する時に要求されるパスワード。
-          現在: {settings.leaderPasswordHash
-            ? <span className="text-green-700 font-medium">設定済み</span>
-            : <span className="text-red-600 font-medium">未設定</span>}
-        </p>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex gap-3 flex-wrap">
-            <input
-              type="password"
-              className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={settings.leaderPasswordHash ? '新しい監視長パスワード' : '監視長パスワードを設定'}
-              value={newLeaderPass}
-              onChange={(e) => setNewLeaderPass(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSetLeaderPassword(); }}
-            />
-            <button
-              onClick={handleSetLeaderPassword}
-              disabled={savingLeaderPw || !newLeaderPass}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                !savingLeaderPw && newLeaderPass
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {savingLeaderPw ? '保存中...' : '保存'}
-            </button>
-          </div>
-        </div>
-      </section>
-
 
       {/* Student management */}
       <section>

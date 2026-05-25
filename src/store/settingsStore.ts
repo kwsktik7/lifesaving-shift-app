@@ -7,16 +7,13 @@ import { isFirebaseConfigured, subscribeDoc, firestoreSet, firestoreUpdate } fro
 interface SettingsState {
   settings: AppSettings;
   _ready: boolean;
-  updateSettings: (patch: Partial<Omit<AppSettings, 'adminPasswordHash' | 'leaderPasswordHash'>>) => Promise<void>;
+  updateSettings: (patch: Partial<Omit<AppSettings, 'adminPasswordHash'>>) => Promise<void>;
   setAdminPassword: (password: string) => Promise<void>;
   verifyAdminPassword: (password: string) => boolean;
-  setLeaderPassword: (password: string) => Promise<void>;
-  verifyLeaderPassword: (password: string) => boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   adminPasswordHash: '',
-  leaderPasswordHash: '',
   seasonStart: '2026-07-03',
   seasonEnd: '2026-09-05',
   fullPayAmount: 9100,
@@ -80,18 +77,6 @@ export const useSettingsStore = isFirebaseConfigured
           if (!hash) return true;
           return hash === hashPin(password);
         },
-        setLeaderPassword: async (password) => {
-          const leaderPasswordHash = hashPin(password);
-          set((state) => ({ settings: { ...state.settings, leaderPasswordHash } }));
-          firestoreUpdate(COLLECTION, DOC_ID, { leaderPasswordHash }).catch((e) => {
-            console.warn('[settings] setLeaderPassword promise did not resolve', e);
-          });
-        },
-        verifyLeaderPassword: (password) => {
-          const hash = get().settings.leaderPasswordHash;
-          if (!hash) return false;
-          return hash === hashPin(password);
-        },
       };
     })
   : create<SettingsState>()(
@@ -110,16 +95,6 @@ export const useSettingsStore = isFirebaseConfigured
           verifyAdminPassword: (password) => {
             const hash = get().settings.adminPasswordHash;
             if (!hash) return true;
-            return hash === hashPin(password);
-          },
-          setLeaderPassword: async (password) => {
-            set((state) => ({
-              settings: { ...state.settings, leaderPasswordHash: hashPin(password) },
-            }));
-          },
-          verifyLeaderPassword: (password) => {
-            const hash = get().settings.leaderPasswordHash;
-            if (!hash) return false;
             return hash === hashPin(password);
           },
         }),
