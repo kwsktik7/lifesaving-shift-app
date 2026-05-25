@@ -66,8 +66,10 @@ export default function AdminSettings() {
 
   // 学生の編集中ステート
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
   const [editGrade, setEditGrade] = useState('');
   const [editRole, setEditRole] = useState('');
+  const [editHasPwc, setEditHasPwc] = useState(false);
 
   // 削除モーダル用ステート
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -146,17 +148,31 @@ export default function AdminSettings() {
     }
   }
 
-  function startEditStudent(id: string, grade: string, role: string) {
-    setEditingStudentId(id);
-    setEditGrade(grade || '1年');
-    setEditRole(role || '');
+  function startEditStudent(s: { id: string; name: string; grade: string; role: string; hasPwc: boolean }) {
+    setEditingStudentId(s.id);
+    setEditName(s.name);
+    setEditGrade(s.grade || '1年');
+    setEditRole(s.role || '');
+    setEditHasPwc(s.hasPwc);
   }
   function cancelEditStudent() {
     setEditingStudentId(null);
   }
   async function saveEditStudent(id: string) {
+    const name = editName.trim();
+    if (!name) {
+      setErrorMsg('氏名を入力してください');
+      return;
+    }
+    const isLeader = FIXED_ROLES.find((r) => r.name === editRole)?.isLeader ?? false;
     try {
-      await updateStudent(id, { grade: editGrade, role: editRole });
+      await updateStudent(id, {
+        name,
+        grade: editGrade,
+        role: editRole,
+        hasPwc: editHasPwc,
+        isLeader,
+      });
       setEditingStudentId(null);
       setErrorMsg('');
       setSuccessMsg('学生情報を更新しました');
@@ -497,23 +513,44 @@ export default function AdminSettings() {
                         )}
                       </div>
                       {isEditing ? (
-                        <div className="flex items-center gap-2 mt-1">
-                          <select
-                            value={editGrade}
-                            onChange={(e) => setEditGrade(e.target.value)}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white"
-                          >
-                            {GRADE_OPTIONS.map((g) => (
-                              <option key={g} value={g}>{g}</option>
-                            ))}
-                          </select>
+                        <div className="mt-2 space-y-2">
                           <input
                             type="text"
-                            placeholder="役職"
-                            value={editRole}
-                            onChange={(e) => setEditRole(e.target.value)}
-                            className="border border-gray-300 rounded-md px-2 py-1 text-xs flex-1 min-w-0"
+                            placeholder="氏名"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm"
                           />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <select
+                              value={editGrade}
+                              onChange={(e) => setEditGrade(e.target.value)}
+                              className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white"
+                            >
+                              {GRADE_OPTIONS.map((g) => (
+                                <option key={g} value={g}>{g}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={editRole}
+                              onChange={(e) => setEditRole(e.target.value)}
+                              className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white flex-1 min-w-[100px]"
+                            >
+                              <option value="">役職なし</option>
+                              {FIXED_ROLES.map((r) => (
+                                <option key={r.name} value={r.name}>{r.name}</option>
+                              ))}
+                            </select>
+                            <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={editHasPwc}
+                                onChange={(e) => setEditHasPwc(e.target.checked)}
+                                className="w-3.5 h-3.5"
+                              />
+                              PWC
+                            </label>
+                          </div>
                         </div>
                       ) : (
                         <p className="text-xs text-gray-400 truncate">
@@ -546,7 +583,7 @@ export default function AdminSettings() {
                         </>
                       ) : (
                         <button
-                          onClick={() => startEditStudent(student.id, student.grade, student.role)}
+                          onClick={() => startEditStudent(student)}
                           className="text-gray-400 hover:text-blue-600 transition-colors"
                           title="編集"
                         >
