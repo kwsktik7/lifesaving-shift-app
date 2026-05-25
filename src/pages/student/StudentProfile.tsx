@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getSession } from '@/utils/auth';
+import { getSession, verifyPin } from '@/utils/auth';
 import { GRADE_OPTIONS } from '@/utils/studentSort';
 import { Check } from 'lucide-react';
 
@@ -13,7 +13,7 @@ import { Check } from 'lucide-react';
 export default function StudentProfile() {
   const session = getSession();
   const studentId = session?.studentId ?? '';
-  const { students, updateStudent } = useStudentStore();
+  const { students, updateStudent, updateStudentPin } = useStudentStore();
   const { settings, verifyLeaderPassword } = useSettingsStore();
 
   const me = useMemo(() => students.find((s) => s.id === studentId), [students, studentId]);
@@ -32,6 +32,13 @@ export default function StudentProfile() {
   const [leaderPass, setLeaderPass] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // PIN変更フォーム
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [newPinConfirm, setNewPinConfirm] = useState('');
+  const [savingPin, setSavingPin] = useState(false);
+  const [pinMsg, setPinMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // 初回レンダリング後に me が入ってくるケースに備えて同期
   if (me && grade === '1年' && me.grade && me.grade !== grade && !saving) {
@@ -83,6 +90,42 @@ export default function StudentProfile() {
       setMsg({ kind: 'err', text: `保存失敗: ${text}` });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleChangePin(e: React.FormEvent) {
+    e.preventDefault();
+    setPinMsg(null);
+    if (!me) return;
+    if (!verifyPin(currentPin, me.pinHash)) {
+      setPinMsg({ kind: 'err', text: '現在のPINが違います' });
+      return;
+    }
+    if (!/^\d{4}$/.test(newPin)) {
+      setPinMsg({ kind: 'err', text: '新しいPINは4桁の数字で入力してください' });
+      return;
+    }
+    if (newPin !== newPinConfirm) {
+      setPinMsg({ kind: 'err', text: '確認用PINが一致しません' });
+      return;
+    }
+    if (newPin === currentPin) {
+      setPinMsg({ kind: 'err', text: '現在と異なるPINを入力してください' });
+      return;
+    }
+    setSavingPin(true);
+    try {
+      await updateStudentPin(me.id, newPin);
+      setCurrentPin('');
+      setNewPin('');
+      setNewPinConfirm('');
+      setPinMsg({ kind: 'ok', text: 'PINを変更しました' });
+      setTimeout(() => setPinMsg(null), 2500);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setPinMsg({ kind: 'err', text: `変更失敗: ${text}` });
+    } finally {
+      setSavingPin(false);
     }
   }
 
@@ -176,6 +219,76 @@ export default function StudentProfile() {
           className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
         >
           {saving ? '保存中...' : '変更を保存'}
+        </button>
+      </form>
+
+      {/* PIN変更 */}
+      <form onSubmit={handleChangePin} className="space-y-4 bg-white rounded-xl border border-gray-200 p-5 mt-6">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">PIN変更</h2>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            ログインに使うPINを変更できます。他人には教えないでください。
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">現在のPIN</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={currentPin}
+            onChange={(e) => setCurrentPin(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="0000"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">新しいPIN（4桁）</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={newPin}
+            onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="0000"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">確認のためもう一度</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={newPinConfirm}
+            onChange={(e) => setNewPinConfirm(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="0000"
+          />
+        </div>
+
+        {pinMsg && (
+          <div
+            className={`text-sm px-3 py-2 rounded-lg ${
+              pinMsg.kind === 'ok'
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}
+          >
+            {pinMsg.kind === 'ok' && <Check size={14} className="inline mr-1" />}
+            {pinMsg.text}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={savingPin || !currentPin || !newPin || !newPinConfirm}
+          className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >
+          {savingPin ? '変更中...' : 'PINを変更'}
         </button>
       </form>
     </div>

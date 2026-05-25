@@ -25,7 +25,7 @@ function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: stri
 }
 
 export default function AdminSettings() {
-  const { students, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
+  const { students, addStudent, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
   const { settings, updateSettings, setAdminPassword, verifyAdminPassword, setLeaderPassword } = useSettingsStore();
   const { availabilities } = useAvailabilityStore();
   useSeasonStore();
@@ -41,6 +41,13 @@ export default function AdminSettings() {
 
   const [newAdminPass, setNewAdminPass] = useState('');
   const [newLeaderPass, setNewLeaderPass] = useState('');
+
+  // 学生追加フォーム
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentGrade, setNewStudentGrade] = useState<string>(GRADE_OPTIONS[0]);
+  const [newStudentRole, setNewStudentRole] = useState('');
+  const [newStudentHasPwc, setNewStudentHasPwc] = useState(false);
+  const [addingStudent, setAddingStudent] = useState(false);
 
   // 学生の編集中ステート
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
@@ -81,6 +88,46 @@ export default function AdminSettings() {
       const msg = e instanceof Error ? e.message : String(e);
       setDeleteErr(`削除に失敗しました: ${msg}`);
       setDeleting(false);
+    }
+  }
+
+  async function handleAddStudent() {
+    const name = newStudentName.trim();
+    if (!name) {
+      setErrorMsg('氏名を入力してください');
+      return;
+    }
+    // 同名チェック
+    if (students.some((s) => s.name === name && s.isActive)) {
+      setErrorMsg(`「${name}」は既に登録されています`);
+      return;
+    }
+    setAddingStudent(true);
+    try {
+      const selectedRole = currentRoles.find((r) => r.name === newStudentRole);
+      await addStudent({
+        name,
+        nameKana: '',
+        // pin は省略 (空) → 学生が初回ログイン時に設定する
+        isActive: true,
+        joinYear: new Date().getFullYear(),
+        grade: newStudentGrade,
+        role: newStudentRole,
+        hasPwc: newStudentHasPwc,
+        isLeader: selectedRole?.isLeader ?? false,
+      });
+      setNewStudentName('');
+      setNewStudentGrade(GRADE_OPTIONS[0]);
+      setNewStudentRole('');
+      setNewStudentHasPwc(false);
+      setErrorMsg('');
+      setSuccessMsg(`「${name}」を追加しました。本人が初回ログイン時にPINを設定します。`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`追加に失敗しました: ${msg}`);
+    } finally {
+      setAddingStudent(false);
     }
   }
 
@@ -432,7 +479,7 @@ export default function AdminSettings() {
       <section>
         <h2 className="text-base font-semibold text-gray-700 mb-2">監視長パスワード変更</h2>
         <p className="text-xs text-gray-500 mb-3">
-          新規アカウント作成で「監視長」「副監視長」を選択する時に要求されるパスワード。
+          学生のプロフィール画面で「監視長」「副監視長」を選択する時に要求されるパスワード。
           現在: {settings.leaderPasswordHash
             ? <span className="text-green-700 font-medium">設定済み</span>
             : <span className="text-red-600 font-medium">未設定</span>}
@@ -466,7 +513,7 @@ export default function AdminSettings() {
       <section>
         <h2 className="text-base font-semibold text-gray-700 mb-2">役職リスト</h2>
         <p className="text-xs text-gray-500 mb-3">
-          新規アカウント作成時に学生が選択できる役職の一覧。「要パスワード」にチェックすると、選択時に監視長パスワードが要求されます(シフト生成への影響があるため)。
+          学生のプロフィール画面と「学生を追加」フォームで選択できる役職の一覧。「要パスワード」にチェックすると、学生がプロフィール画面で選択する際に監視長パスワードが要求されます(シフト生成への影響があるため)。
         </p>
         <p className="text-xs text-gray-400 mb-2">左端のハンドル（⋮⋮）をドラッグして並び替えできます。</p>
         <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -573,8 +620,65 @@ export default function AdminSettings() {
       <section>
         <h2 className="text-base font-semibold text-gray-700 mb-4">学生管理</h2>
         <p className="text-xs text-gray-500 mb-3">
-          学生はログイン画面の「新規アカウント作成」から自身で登録します。
+          ここで学生を登録します。PINは設定しません — 学生が初回ログイン時に自分で設定します。
         </p>
+
+        {/* Add student form */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              placeholder="氏名"
+              className="col-span-2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={newStudentName}
+              onChange={(e) => setNewStudentName(e.target.value)}
+            />
+            <select
+              className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"
+              value={newStudentGrade}
+              onChange={(e) => setNewStudentGrade(e.target.value)}
+            >
+              {GRADE_OPTIONS.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+            <select
+              className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"
+              value={newStudentRole}
+              onChange={(e) => setNewStudentRole(e.target.value)}
+            >
+              <option value="">役職（任意）</option>
+              {currentRoles.map((r) => (
+                <option key={r.name} value={r.name}>{r.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newStudentHasPwc}
+                onChange={(e) => setNewStudentHasPwc(e.target.checked)}
+                className="w-4 h-4"
+              />
+              PWC免許あり
+            </label>
+            <button
+              onClick={handleAddStudent}
+              disabled={addingStudent || !newStudentName.trim()}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !addingStudent && newStudentName.trim()
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {addingStudent ? '追加中...' : '学生を追加'}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 leading-relaxed">
+            PINは学生本人が初回ログイン時に設定します。設定後は管理者画面に表示され、PIN変更も可能です。
+          </p>
+        </div>
 
         {/* Student list */}
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
@@ -630,7 +734,9 @@ export default function AdminSettings() {
                           {student.nameKana && `${student.nameKana} · `}
                           {student.grade || '学年未設定'}
                           {student.role && ` · ${student.role}`}
-                          {student.birthday && ` · PIN: ${student.birthday}`}
+                          {student.birthday
+                            ? ` · PIN: ${student.birthday}`
+                            : ' · PIN: 未設定'}
                         </p>
                       )}
                     </div>

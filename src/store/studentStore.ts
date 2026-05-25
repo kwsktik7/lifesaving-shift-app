@@ -9,10 +9,14 @@ import { db } from '@/lib/firebase';
 interface StudentState {
   students: Student[];
   _ready: boolean;
-  addStudent: (s: Omit<Student, 'id' | 'pinHash'> & { pin: string; grade?: string; role?: string; hasPwc?: boolean; isLeader?: boolean }) => void;
-  /** 本人セルフサインアップ用: id を明示指定して作成（Firestoreルールで studentId == auth.uid を要求） */
-  createAccount: (data: Omit<Student, 'pinHash'> & { pin: string }) => Promise<void>;
+  /**
+   * 学生を追加する。管理者から呼ばれる想定。
+   * pin を空文字で渡すと pinHash も birthday も空のまま作成され、
+   * 学生が初回ログイン時に自分で PIN を設定するフローになる。
+   */
+  addStudent: (s: Omit<Student, 'id' | 'pinHash'> & { pin?: string; grade?: string; role?: string; hasPwc?: boolean; isLeader?: boolean }) => Promise<string>;
   updateStudent: (id: string, patch: Partial<Omit<Student, 'id' | 'pinHash'>>) => void;
+  /** PIN を更新する。pinHash と plaintext (birthday フィールド) の両方を更新する。 */
   updateStudentPin: (id: string, pin: string) => void;
   deactivateStudent: (id: string) => void;
   deleteStudent: (id: string) => void;
@@ -34,28 +38,23 @@ export const useStudentStore = isFirebaseConfigured
         _ready: false,
         addStudent: async ({ pin, ...data }) => {
           const id = crypto.randomUUID();
+          const hasPin = !!pin;
           const student: Student = {
             ...data,
             id,
-            pinHash: hashPin(pin),
+            pinHash: hasPin ? hashPin(pin!) : '',
             grade: data.grade ?? '',
             role: data.role ?? '',
             hasPwc: data.hasPwc ?? false,
             isLeader: data.isLeader ?? false,
+            // birthday フィールドに PIN の plaintext を保持して管理者から見えるようにする。
+            // PIN 未設定なら空文字で初期化（後から学生が設定する）。
+            birthday: hasPin ? pin! : '',
           };
           set((state) => ({ students: [...state.students, student] }));
           const { id: _, ...docData } = student;
           firestoreSet(COLLECTION, id, docData).catch((e) => console.warn('[students] addStudent', e));
-        },
-        createAccount: async ({ pin, id, ...data }) => {
-          const student: Student = {
-            ...data,
-            id,
-            pinHash: hashPin(pin),
-          };
-          const { id: _, ...docData } = student;
-          // createAccount はサインアップ直後なので書き込み完了を待つ
-          await firestoreSet(COLLECTION, id, docData);
+          return id;
         },
         updateStudent: async (id, patch) => {
           set((state) => ({
@@ -66,9 +65,9 @@ export const useStudentStore = isFirebaseConfigured
         updateStudentPin: async (id, pin) => {
           const pinHash = hashPin(pin);
           set((state) => ({
-            students: state.students.map((s) => (s.id === id ? { ...s, pinHash } : s)),
+            students: state.students.map((s) => (s.id === id ? { ...s, pinHash, birthday: pin } : s)),
           }));
-          firestoreUpdate(COLLECTION, id, { pinHash }).catch((e) => console.warn('[students] updatePin', e));
+          firestoreUpdate(COLLECTION, id, { pinHash, birthday: pin }).catch((e) => console.warn('[students] updatePin', e));
         },
         deactivateStudent: async (id) => {
           set((state) => ({
@@ -121,25 +120,25 @@ export const useStudentStore = isFirebaseConfigured
         (set) => ({
           students: [],
           _ready: true,
-          addStudent: ({ pin, ...data }) =>
+          addStudent: async ({ pin, ...data }) => {
+            const id = crypto.randomUUID();
+            const hasPin = !!pin;
             set((state) => ({
               students: [
                 ...state.students,
                 {
                   ...data,
-                  id: crypto.randomUUID(),
-                  pinHash: hashPin(pin),
+                  id,
+                  pinHash: hasPin ? hashPin(pin!) : '',
                   grade: data.grade ?? '',
                   role: data.role ?? '',
                   hasPwc: data.hasPwc ?? false,
                   isLeader: data.isLeader ?? false,
+                  birthday: hasPin ? pin! : '',
                 },
               ],
-            })),
-          createAccount: async ({ pin, ...data }) => {
-            set((state) => ({
-              students: [...state.students, { ...data, pinHash: hashPin(pin) } as Student],
             }));
+            return id;
           },
           updateStudent: (id, patch) =>
             set((state) => ({
@@ -147,7 +146,7 @@ export const useStudentStore = isFirebaseConfigured
             })),
           updateStudentPin: (id, pin) =>
             set((state) => ({
-              students: state.students.map((s) => (s.id === id ? { ...s, pinHash: hashPin(pin) } : s)),
+              students: state.students.map((s) => (s.id === id ? { ...s, pinHash: hashPin(pin), birthday: pin } : s)),
             })),
           deactivateStudent: (id) =>
             set((state) => ({
