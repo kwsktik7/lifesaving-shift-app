@@ -6,7 +6,6 @@ import { useAvailabilityStore } from '@/store/availabilityStore';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
 import { Trash2, Pencil, Check, X, GripVertical } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
-import { INITIAL_ROSTER } from '@/lib/initialRoster';
 
 /** seasonStart〜seasonEnd に含まれる月のキー "YYYY-MM" を列挙 */
 function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: string; label: string }[] {
@@ -89,69 +88,6 @@ export default function AdminSettings() {
       const msg = e instanceof Error ? e.message : String(e);
       setDeleteErr(`削除に失敗しました: ${msg}`);
       setDeleting(false);
-    }
-  }
-
-  // --- 初期名簿セットアップ ---
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [setupPw, setSetupPw] = useState('');
-  const [setupErr, setSetupErr] = useState('');
-  const [setupRunning, setSetupRunning] = useState(false);
-  const [setupProgress, setSetupProgress] = useState(0);
-
-  async function runInitialSetup() {
-    if (!verifyAdminPassword(setupPw)) {
-      setSetupErr('管理者パスワードが違います');
-      return;
-    }
-    setSetupRunning(true);
-    setSetupErr('');
-    setSetupProgress(0);
-    try {
-      // 既存の役職一覧に PDF で登場する役職を merge
-      const presentRoles = new Set(INITIAL_ROSTER.map((r) => r.role).filter((r) => r));
-      const existingRoleNames = new Set(currentRoles.map((r) => r.name));
-      const mergedRoles = [...currentRoles];
-      for (const name of presentRoles) {
-        if (!existingRoleNames.has(name)) {
-          const isLeader = name === '監視長' || name === '副監視長';
-          mergedRoles.push({ name, isLeader });
-        }
-      }
-      if (mergedRoles.length !== currentRoles.length) {
-        await updateSettings({ roles: mergedRoles });
-      }
-
-      // 1人ずつ addStudent (cascade などはせず追加のみ)
-      for (let i = 0; i < INITIAL_ROSTER.length; i++) {
-        const row = INITIAL_ROSTER[i];
-        // 既に同名の active 学生がいたらスキップ
-        if (students.some((s) => s.name === row.name && s.isActive)) {
-          setSetupProgress(i + 1);
-          continue;
-        }
-        await addStudent({
-          name: row.name,
-          nameKana: '',
-          isActive: true,
-          joinYear: new Date().getFullYear(),
-          grade: row.grade,
-          role: row.role,
-          hasPwc: row.hasPwc,
-          isLeader: row.role === '監視長' || row.role === '副監視長',
-          order: row.order,
-        });
-        setSetupProgress(i + 1);
-      }
-      setSuccessMsg(`初期名簿 ${INITIAL_ROSTER.length} 名を登録しました。PINは各自で初回ログイン時に設定します。`);
-      setTimeout(() => setSuccessMsg(''), 5000);
-      setSetupOpen(false);
-      setSetupPw('');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setSetupErr(`登録に失敗しました: ${msg}`);
-    } finally {
-      setSetupRunning(false);
     }
   }
 
@@ -744,24 +680,6 @@ export default function AdminSettings() {
           </p>
         </div>
 
-        {/* 初期名簿セットアップ (PDF#1〜#53) */}
-        <div className="bg-white rounded-xl border border-blue-200 p-4 mb-3">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="text-sm">
-              <p className="text-gray-800 font-medium">2026シーズン初期名簿セットアップ</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                #1〜#53 を名簿順で登録。シフト表・勤怠表もこの順序で並びます。
-              </p>
-            </div>
-            <button
-              onClick={() => { setSetupOpen(true); setSetupPw(''); setSetupErr(''); setSetupProgress(0); }}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
-            >
-              名簿を投入
-            </button>
-          </div>
-        </div>
-
         {/* Student list */}
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
           {students.length === 0 ? (
@@ -872,52 +790,6 @@ export default function AdminSettings() {
           )}
         </div>
       </section>
-
-      {/* 初期名簿セットアップ確認モーダル */}
-      {setupOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-base font-semibold text-gray-800 mb-2">2026シーズン名簿を投入</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              #1〜#{INITIAL_ROSTER.length} を順番に登録します。<br />
-              既に同じ氏名で登録済の人はスキップされます。<br />
-              管理者パスワードを入力してください。
-            </p>
-            <input
-              type="password"
-              autoFocus
-              placeholder="管理者パスワード"
-              value={setupPw}
-              onChange={(e) => { setSetupPw(e.target.value); setSetupErr(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') runInitialSetup(); }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
-              disabled={setupRunning}
-            />
-            {setupErr && <p className="text-red-500 text-xs mb-2">{setupErr}</p>}
-            {setupRunning && (
-              <p className="text-xs text-blue-700 mb-2">
-                登録中... {setupProgress} / {INITIAL_ROSTER.length}
-              </p>
-            )}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => { setSetupOpen(false); setSetupPw(''); setSetupErr(''); }}
-                disabled={setupRunning}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={runInitialSetup}
-                disabled={setupRunning || !setupPw}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                {setupRunning ? '登録中...' : '投入する'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 学生削除モーダル */}
       {deleteTarget && (
