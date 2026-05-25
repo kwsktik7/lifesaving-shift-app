@@ -23,7 +23,7 @@ export default function StudentShell() {
           <Link
             to="/student/profile"
             className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors"
-            title="マイページ"
+            title="パスワード変更"
           >
             <User size={16} />
             <span>{session?.studentName}</span>
