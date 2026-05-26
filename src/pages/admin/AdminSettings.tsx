@@ -3,8 +3,10 @@ import { useStudentStore } from '@/store/studentStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
+import { useShiftStore } from '@/store/shiftStore';
+import { firestoreBatchWrite } from '@/lib/firestoreSync';
 import { sortStudents, GRADE_OPTIONS } from '@/utils/studentSort';
-import { Trash2, Pencil, Check, X } from 'lucide-react';
+import { Trash2, Pencil, Check, X, AlertTriangle } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 
 /**
@@ -44,6 +46,7 @@ export default function AdminSettings() {
   const { students, addStudent, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
   const { settings, updateSettings, setAdminPassword, verifyAdminPassword } = useSettingsStore();
   const { availabilities } = useAvailabilityStore();
+  const { shifts } = useShiftStore();
   useSeasonStore();
 
   // studentId → 提出件数(availableなもののみ) の集計
@@ -105,6 +108,43 @@ export default function AdminSettings() {
       const msg = e instanceof Error ? e.message : String(e);
       setDeleteErr(`削除に失敗しました: ${msg}`);
       setDeleting(false);
+    }
+  }
+
+  // --- データリセット (テスト用、運用開始後に削除予定) ---
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetPw, setResetPw] = useState('');
+  const [resetErr, setResetErr] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  async function runReset() {
+    if (!verifyAdminPassword(resetPw)) {
+      setResetErr('管理者パスワードが違います');
+      return;
+    }
+    setResetting(true);
+    setResetErr('');
+    try {
+      // 1) shifts と availability を一括削除 (400件ずつチャンク)
+      const ops: { type: 'delete'; collection: string; docId: string }[] = [
+        ...shifts.map((s) => ({ type: 'delete' as const, collection: 'shifts', docId: s.id })),
+        ...availabilities.map((a) => ({ type: 'delete' as const, collection: 'availability', docId: a.id })),
+      ];
+      for (let i = 0; i < ops.length; i += 400) {
+        await firestoreBatchWrite(ops.slice(i, i + 400));
+      }
+      // 2) settings の配分関連フィールドをリセット
+      await updateSettings({ allocatedMonths: [], monthlyBudgets: {} });
+
+      setSuccessMsg(`データをリセットしました (シフト ${shifts.length}件・可否 ${availabilities.length}件・配分情報を削除)`);
+      setTimeout(() => setSuccessMsg(''), 5000);
+      setResetOpen(false);
+      setResetPw('');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setResetErr(`リセットに失敗しました: ${msg}`);
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -613,6 +653,77 @@ export default function AdminSettings() {
           )}
         </div>
       </section>
+
+      {/* データリセット (テスト用) */}
+      <section>
+        <h2 className="text-base font-semibold text-red-700 mb-2 flex items-center gap-2">
+          <AlertTriangle size={16} />
+          データリセット (テスト用)
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          テスト中に入力したシフト・可否・勤怠・配分データを一括削除します。学生マスタは消えません。
+        </p>
+        <div className="bg-white rounded-xl border border-red-200 p-4 space-y-3">
+          <div className="text-xs text-gray-600 leading-relaxed space-y-1">
+            <p>削除されるデータ:</p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              <li>シフト発行/勤怠データ: <b>{shifts.length}</b>件</li>
+              <li>シフト提出データ: <b>{availabilities.length}</b>件</li>
+              <li>月別予算 ({Object.keys(settings.monthlyBudgets ?? {}).length}件) と給与配分の確定状態 ({(settings.allocatedMonths ?? []).length}件)</li>
+            </ul>
+            <p className="text-gray-500 pt-1">残るもの: 学生マスタ、管理者パスワード、シーズン期間、クラブ名、給与単価</p>
+          </div>
+          <button
+            onClick={() => { setResetOpen(true); setResetPw(''); setResetErr(''); }}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700"
+          >
+            データをリセット
+          </button>
+        </div>
+      </section>
+
+      {/* リセット確認モーダル */}
+      {resetOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-base font-semibold text-gray-800 mb-2 flex items-center gap-2">
+              <AlertTriangle size={18} className="text-red-600" />
+              データをリセット
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              シフト {shifts.length}件・可否 {availabilities.length}件・配分情報をすべて削除します。<br />
+              この操作は取り消せません。管理者パスワードを入力してください。
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="管理者パスワード"
+              value={resetPw}
+              onChange={(e) => { setResetPw(e.target.value); setResetErr(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') runReset(); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-2"
+              disabled={resetting}
+            />
+            {resetErr && <p className="text-red-500 text-xs mb-2">{resetErr}</p>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => { setResetOpen(false); setResetPw(''); setResetErr(''); }}
+                disabled={resetting}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={runReset}
+                disabled={resetting || !resetPw}
+                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {resetting ? '削除中...' : 'リセットする'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 学生削除モーダル */}
       {deleteTarget && (
