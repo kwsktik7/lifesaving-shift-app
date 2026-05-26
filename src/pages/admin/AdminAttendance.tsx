@@ -33,6 +33,8 @@ export default function AdminAttendance() {
   // 追加カード state
   const [adding, setAdding] = useState(false);
   const [addAttendance, setAddAttendance] = useState<AttendanceType>('full');
+  // 一括選択用: チェックされた学生IDの集合
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // 名簿順で並べた active 学生
   const sortedActiveStudents = useMemo(
@@ -58,8 +60,31 @@ export default function AdminAttendance() {
   const attendedStudentIds = new Set(dayAttended.map((s) => s.studentId));
   const candidates = sortedActiveStudents.filter((s) => !attendedStudentIds.has(s.id));
 
-  function handleAdd(studentId: string) {
-    addExtraAttendance(studentId, selectedDate, addAttendance);
+  function toggleSelected(studentId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(candidates.map((c) => c.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkAdd() {
+    if (selectedIds.size === 0) return;
+    // 選択された学生を名簿順で一括追加
+    const ordered = candidates.filter((c) => selectedIds.has(c.id));
+    for (const s of ordered) {
+      addExtraAttendance(s.id, selectedDate, addAttendance);
+    }
+    setSelectedIds(new Set());
     setAdding(false);
   }
 
@@ -76,6 +101,12 @@ export default function AdminAttendance() {
   function handleDateSelect(date: string) {
     setSelectedDate(date);
     setAdding(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleCloseAdd() {
+    setAdding(false);
+    setSelectedIds(new Set());
   }
 
   const halfCount = dayAttended.filter((s) => s.attendance === 'am' || s.attendance === 'pm').length;
@@ -160,18 +191,18 @@ export default function AdminAttendance() {
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-bold text-emerald-800">
                     <UserPlus size={16} className="inline mr-1" />
-                    出勤した人を選ぶ
+                    出勤した人をまとめて選ぶ
                   </p>
                   <button
-                    onClick={() => setAdding(false)}
+                    onClick={handleCloseAdd}
                     className="text-xs text-gray-500 hover:text-gray-700"
                   >
                     閉じる
                   </button>
                 </div>
 
-                {/* 勤務区分 */}
-                <div className="flex gap-2 text-xs flex-wrap">
+                {/* 勤務区分 (一括選択した全員に適用) */}
+                <div className="flex gap-2 text-xs flex-wrap items-center">
                   <span className="text-gray-500 py-1">勤務:</span>
                   {(['full', 'am', 'pm'] as AttendanceType[]).map((at) => (
                     <button
@@ -186,34 +217,81 @@ export default function AdminAttendance() {
                       {at === 'full' ? '終日' : at === 'am' ? '午前のみ' : '午後のみ'}
                     </button>
                   ))}
+                  <span className="text-[11px] text-gray-400 ml-1">選んだ全員に適用</span>
                 </div>
 
+                {/* 全員選択 / クリア */}
+                {candidates.length > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex gap-3">
+                      <button
+                        onClick={selectAll}
+                        className="text-emerald-700 hover:text-emerald-900 font-medium"
+                      >
+                        全員選択 ({candidates.length})
+                      </button>
+                      {selectedIds.size > 0 && (
+                        <button
+                          onClick={clearSelection}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          選択をクリア
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-gray-500">選択中: <b className="text-emerald-700">{selectedIds.size}</b>名</span>
+                  </div>
+                )}
+
                 {/* 候補リスト */}
-                <div className="bg-white rounded-lg border border-emerald-200 divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                <div className="bg-white rounded-lg border border-emerald-200 divide-y divide-gray-100 max-h-80 overflow-y-auto">
                   {candidates.length === 0 ? (
                     <p className="text-xs text-gray-400 p-3">追加できる学生がいません(全員追加済み)</p>
                   ) : (
-                    candidates.map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => handleAdd(s.id)}
-                        className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-emerald-50 transition-colors"
-                      >
-                        <span className="text-gray-800">
-                          {s.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                          {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                          {s.name}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {s.grade}{s.role ? ` / ${s.role}` : ''}
-                        </span>
-                      </button>
-                    ))
+                    candidates.map((s) => {
+                      const checked = selectedIds.has(s.id);
+                      return (
+                        <label
+                          key={s.id}
+                          className={`flex items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors ${
+                            checked ? 'bg-emerald-50' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelected(s.id)}
+                            className="w-4 h-4 accent-emerald-600"
+                          />
+                          <span className="text-gray-800 flex-1">
+                            {s.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
+                            {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
+                            {s.name}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {s.grade}{s.role ? ` / ${s.role}` : ''}
+                          </span>
+                        </label>
+                      );
+                    })
                   )}
                 </div>
-                <p className="text-[11px] text-gray-500">
-                  選んだ人が即座に出勤者リストに追加されます。
-                </p>
+
+                {/* 追加ボタン */}
+                <button
+                  onClick={handleBulkAdd}
+                  disabled={selectedIds.size === 0}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+                    selectedIds.size > 0
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <UserPlus size={16} />
+                  {selectedIds.size > 0
+                    ? `${selectedIds.size}名を「${addAttendance === 'full' ? '終日' : addAttendance === 'am' ? '午前のみ' : '午後のみ'}」で追加`
+                    : '学生を選択してください'}
+                </button>
               </div>
             )}
 
