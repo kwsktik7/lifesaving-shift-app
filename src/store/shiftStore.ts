@@ -11,6 +11,11 @@ interface ShiftState {
   assignShift: (studentId: string, date: string, payType: PayType, attendance?: AttendanceType) => void;
   updateShift: (id: string, patch: Partial<Pick<ShiftAssignment, 'payType' | 'status' | 'attendance' | 'replacedBy' | 'replacesId' | 'note'>>) => void;
   addReplacementShift: (originalShiftId: string, replacementStudentId: string, attendance: AttendanceType) => void;
+  /**
+   * 当日の追加出勤者(シフト表に載っていない人を当日勤怠で増員する)。
+   * payType=V / status=attended の確定シフトとして即作成する。
+   */
+  addExtraAttendance: (studentId: string, date: string, attendance: AttendanceType) => void;
   removeShift: (id: string) => void;
   publishDay: (date: string) => void;
   getShiftsForDate: (date: string) => ShiftAssignment[];
@@ -161,6 +166,22 @@ export const useShiftStore = isFirebaseConfigured
             { type: 'set', collection: COLLECTION, docId: newShift.id, data: shiftToDoc(newShift) },
           ]).catch((e) => console.warn('[shifts] replacement', e));
         },
+        addExtraAttendance: async (studentId, date, attendance) => {
+          const newShift: ShiftAssignment = {
+            id: crypto.randomUUID(),
+            studentId,
+            date,
+            payType: 'V' as const,
+            status: 'attended' as ShiftStatus,
+            attendance,
+            note: '当日追加',
+            createdAt: new Date().toISOString(),
+          };
+          set((state) => ({ shifts: [...state.shifts, newShift] }));
+          firestoreSet(COLLECTION, newShift.id, shiftToDoc(newShift)).catch((e) =>
+            console.warn('[shifts] addExtra', e),
+          );
+        },
         removeShift: async (id) => {
           set((state) => ({ shifts: state.shifts.filter((s) => s.id !== id) }));
           firestoreDelete(COLLECTION, id).catch((e) => console.warn('[shifts] delete', e));
@@ -267,6 +288,23 @@ export const useShiftStore = isFirebaseConfigured
                   attendance,
                   replacesId: originalShiftId,
                   note: `${original.studentId}の代わり`,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }));
+          },
+          addExtraAttendance: (studentId, date, attendance) => {
+            set((state) => ({
+              shifts: [
+                ...state.shifts,
+                {
+                  id: crypto.randomUUID(),
+                  studentId,
+                  date,
+                  payType: 'V' as const,
+                  status: 'attended' as ShiftStatus,
+                  attendance,
+                  note: '当日追加',
                   createdAt: new Date().toISOString(),
                 },
               ],
