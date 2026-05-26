@@ -57,8 +57,8 @@ export default function AdminShiftEdit() {
     const status = dayAvailMap.get(studentId);
     const attendance: AttendanceType =
       status === 'am' ? 'am' : status === 'pm' ? 'pm' : 'full';
-    // payType は後で月次配分で決まる → 初期値V
-    assignShift(studentId, selectedDate, 'V', attendance);
+    // payType は持たない (給与配分ページで月末に1/Vを確定する)
+    assignShift(studentId, selectedDate, attendance);
   }
 
   const draftCount = dayShifts.filter((s) => s.status === 'draft').length;

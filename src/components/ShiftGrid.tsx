@@ -232,19 +232,26 @@ function CellContent({
         </span>
       );
     }
-    // 管理者向け（1/V表示）: 半日は 1/V に "前"/"後" サフィックスを付けない代わりに
-    // セル背景で黄色系にして半日を明示する
+    // 管理者向け（1/V表示）: 配分後は色分け、未配分(undefined)はグレー「出」
+    const isFull = shift.payType === '1';
+    const isV = shift.payType === 'V';
+    let colorClass: string;
+    if (isFull) {
+      colorClass = isDraft ? 'bg-green-100 text-green-600 opacity-60' : 'bg-green-500 text-white';
+    } else if (isV) {
+      colorClass = isDraft ? 'bg-orange-100 text-orange-500 opacity-60' : 'bg-orange-400 text-white';
+    } else {
+      // 未配分(payType undefined): 配分前の暫定表示
+      colorClass = isDraft ? 'bg-gray-100 text-gray-500 opacity-60' : 'bg-blue-400 text-white';
+    }
+    const label = shift.payType ?? '出';
     return (
       <span
-        className={`inline-flex items-center justify-center w-6 h-6 rounded font-bold ${
-          shift.payType === '1'
-            ? isDraft ? 'bg-green-100 text-green-600 opacity-60' : 'bg-green-500 text-white'
-            : isDraft ? 'bg-orange-100 text-orange-500 opacity-60' : 'bg-orange-400 text-white'
-        } ${half ? 'ring-2 ring-yellow-400' : ''}`}
+        className={`inline-flex items-center justify-center w-6 h-6 rounded font-bold ${colorClass} ${half ? 'ring-2 ring-yellow-400' : ''}`}
         style={{ fontSize: '11px' }}
-        title={half ? `${shift.payType} / ${shift.attendance === 'am' ? '午前のみ' : '午後のみ'}` : isDraft ? '下書き' : '公開済み'}
+        title={half ? `${label} / ${shift.attendance === 'am' ? '午前のみ' : '午後のみ'}` : isDraft ? '下書き' : isFull || isV ? '配分済み' : '未配分(配分ページで確定)'}
       >
-        {shift.payType}
+        {label}
       </span>
     );
   }

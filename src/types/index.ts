@@ -45,7 +45,12 @@ export interface ShiftAssignment {
   id: string;
   studentId: string;
   date: string;
-  payType: PayType;
+  /**
+   * 給与区分。配分前は undefined (未確定)。月末に AdminPayAllocation の
+   * 配分実行で 1 or V が確定する。給与計算ロジックは undefined を 0 円扱い
+   * とする (配分されるまで給与は発生しない)。
+   */
+  payType?: PayType;
   status: ShiftStatus;
   attendance: AttendanceType; // full / am / pm
   replacedBy?: string;       // 交代先の学生ID（元のシフトに記録）

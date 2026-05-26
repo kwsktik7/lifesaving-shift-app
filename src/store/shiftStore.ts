@@ -8,12 +8,12 @@ import { isFirebaseConfigured, subscribeCollection, firestoreSet, firestoreUpdat
 interface ShiftState {
   shifts: ShiftAssignment[];
   _ready: boolean;
-  assignShift: (studentId: string, date: string, payType: PayType, attendance?: AttendanceType) => void;
+  assignShift: (studentId: string, date: string, attendance?: AttendanceType) => void;
   updateShift: (id: string, patch: Partial<Pick<ShiftAssignment, 'payType' | 'status' | 'attendance' | 'replacedBy' | 'replacesId' | 'note'>>) => void;
   addReplacementShift: (originalShiftId: string, replacementStudentId: string, attendance: AttendanceType) => void;
   /**
-   * 当日の追加出勤者(シフト表に載っていない人を当日勤怠で増員する)。
-   * payType=V / status=attended の確定シフトとして即作成する。
+   * 勤怠入力で出勤者を追加する。status=attended、payType は未確定 (undefined)。
+   * 月末に AdminPayAllocation で payType が 1 or V に確定する。
    */
   addExtraAttendance: (studentId: string, date: string, attendance: AttendanceType) => void;
   removeShift: (id: string) => void;
@@ -33,8 +33,14 @@ interface ShiftState {
 const COLLECTION = 'shifts';
 
 function shiftToDoc(s: ShiftAssignment): Record<string, unknown> {
-  const { id, ...rest } = s;
-  return rest;
+  const { id: _id, ...rest } = s;
+  void _id;
+  const doc: Record<string, unknown> = { ...rest };
+  // Firestore は undefined を受け付けないので未確定のキーを落とす
+  for (const k of Object.keys(doc)) {
+    if (doc[k] === undefined) delete doc[k];
+  }
+  return doc;
 }
 
 function computeSummaries(shifts: ShiftAssignment[]): StudentSummary[] {
@@ -43,6 +49,7 @@ function computeSummaries(shifts: ShiftAssignment[]): StudentSummary[] {
 
   return students.filter((s) => s.isActive).map((student) => {
     const mine = shifts.filter((s) => s.studentId === student.id && s.status !== 'cancelled' && s.status !== 'draft');
+    // 配分未確定 (payType === undefined) は full/V のどちらにも入れない
     const assigned = mine.filter((s) => s.status !== 'absent');
     const fullPayDays = assigned.filter((s) => s.payType === '1').length;
     const vPayDays = assigned.filter((s) => s.payType === 'V').length;
@@ -53,8 +60,10 @@ function computeSummaries(shifts: ShiftAssignment[]): StudentSummary[] {
     const attendedVPayDays = attended.filter((s) => s.payType === 'V').length;
     const absentDays = mine.filter((s) => s.status === 'absent').length;
 
+    // 給与は payType が確定済みのもののみ計算 (undefined は 0 円扱い)
     let totalPay = 0;
     for (const s of attended) {
+      if (s.payType !== '1' && s.payType !== 'V') continue;
       const base = s.payType === '1' ? fullPayAmount : vPayAmount;
       const multiplier = (s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1;
       totalPay += base * multiplier;
@@ -109,22 +118,23 @@ export const useShiftStore = isFirebaseConfigured
       return {
         shifts: [],
         _ready: false,
-        assignShift: async (studentId, date, payType, attendance = 'full') => {
+        assignShift: async (studentId, date, attendance = 'full') => {
           const existing = get().shifts.find(
             (s) => s.studentId === studentId && s.date === date && s.status !== 'cancelled',
           );
           if (existing) {
+            // 既存シフトがあれば attendance だけ更新 (payType には触らない)
             set((state) => ({
-              shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType, attendance } : s)),
+              shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, attendance } : s)),
             }));
-            firestoreUpdate(COLLECTION, existing.id, { payType, attendance }).catch((e) => console.warn('[shifts] assign-update', e));
+            firestoreUpdate(COLLECTION, existing.id, { attendance }).catch((e) => console.warn('[shifts] assign-update', e));
             return;
           }
+          // 新規作成時は payType を持たない (未確定)
           const shift: ShiftAssignment = {
             id: crypto.randomUUID(),
             studentId,
             date,
-            payType,
             status: 'draft',
             attendance,
             note: '',
@@ -142,11 +152,11 @@ export const useShiftStore = isFirebaseConfigured
         addReplacementShift: async (originalShiftId, replacementStudentId, attendance) => {
           const original = get().shifts.find((s) => s.id === originalShiftId);
           if (!original) return;
+          // payType は未確定 (給与配分で月末に確定)
           const newShift: ShiftAssignment = {
             id: crypto.randomUUID(),
             studentId: replacementStudentId,
             date: original.date,
-            payType: 'V' as const,
             status: 'attended' as ShiftStatus,
             attendance,
             replacesId: originalShiftId,
@@ -167,14 +177,14 @@ export const useShiftStore = isFirebaseConfigured
           ]).catch((e) => console.warn('[shifts] replacement', e));
         },
         addExtraAttendance: async (studentId, date, attendance) => {
+          // payType は持たない (給与配分時に確定)
           const newShift: ShiftAssignment = {
             id: crypto.randomUUID(),
             studentId,
             date,
-            payType: 'V' as const,
             status: 'attended' as ShiftStatus,
             attendance,
-            note: '当日追加',
+            note: '',
             createdAt: new Date().toISOString(),
           };
           set((state) => ({ shifts: [...state.shifts, newShift] }));
@@ -241,13 +251,13 @@ export const useShiftStore = isFirebaseConfigured
         (set, get) => ({
           shifts: [],
           _ready: true,
-          assignShift: (studentId, date, payType, attendance = 'full') => {
+          assignShift: (studentId, date, attendance = 'full') => {
             const existing = get().shifts.find(
               (s) => s.studentId === studentId && s.date === date && s.status !== 'cancelled',
             );
             if (existing) {
               set((state) => ({
-                shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, payType, attendance } : s)),
+                shifts: state.shifts.map((s) => (s.id === existing.id ? { ...s, attendance } : s)),
               }));
               return;
             }
@@ -258,7 +268,6 @@ export const useShiftStore = isFirebaseConfigured
                   id: crypto.randomUUID(),
                   studentId,
                   date,
-                  payType,
                   status: 'draft',
                   attendance,
                   note: '',
@@ -283,7 +292,6 @@ export const useShiftStore = isFirebaseConfigured
                   id: crypto.randomUUID(),
                   studentId: replacementStudentId,
                   date: original.date,
-                  payType: 'V' as const,
                   status: 'attended' as ShiftStatus,
                   attendance,
                   replacesId: originalShiftId,
@@ -301,10 +309,9 @@ export const useShiftStore = isFirebaseConfigured
                   id: crypto.randomUUID(),
                   studentId,
                   date,
-                  payType: 'V' as const,
                   status: 'attended' as ShiftStatus,
                   attendance,
-                  note: '当日追加',
+                  note: '',
                   createdAt: new Date().toISOString(),
                 },
               ],

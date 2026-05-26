@@ -54,12 +54,13 @@ export function exportAttendanceReport(
       if (shift.status === 'absent') return '欠';
       if (shift.status === 'attended') {
         const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
-        return shift.payType + half;
+        // 未配分(payType undefined)は ? 表示
+        return (shift.payType ?? '?') + half;
       }
       return '○'; // published but not yet confirmed
     });
 
-    // Pay = attended only (half-day = half pay)
+    // Pay = attended only (half-day = half pay) — 未配分は 0 円扱い
     const attended = filteredShifts.filter(
       (s) => s.studentId === student.id && s.status === 'attended'
     );
@@ -71,10 +72,11 @@ export function exportAttendanceReport(
       if (s.payType === '1') {
         attendedFullPay += multiplier;
         totalPay += settings.fullPayAmount * multiplier;
-      } else {
+      } else if (s.payType === 'V') {
         attendedVPay += multiplier;
         totalPay += settings.vPayAmount * multiplier;
       }
+      // payType undefined は集計対象外 (給与配分前の状態)
     }
 
     return [student.grade, student.role, student.name, ...cells, attendedFullPay + attendedVPay, attendedFullPay, attendedVPay, totalPay];
@@ -105,7 +107,8 @@ export function exportAttendanceReport(
     for (const s of attended) {
       const mult = (s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1;
       if (s.payType === '1') { pFullPay += mult; pTotalPay += settings.fullPayAmount * mult; }
-      else { pVPay += mult; pTotalPay += settings.vPayAmount * mult; }
+      else if (s.payType === 'V') { pVPay += mult; pTotalPay += settings.vPayAmount * mult; }
+      // 未配分(payType undefined)は給与計算の対象外
     }
     return [student.grade, student.role, student.name, pFullPay, pVPay, pFullPay + pVPay, pTotalPay];
   });

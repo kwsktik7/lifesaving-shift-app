@@ -12,7 +12,7 @@ import { sortStudents } from '@/utils/studentSort';
  * 勤怠入力ページ (シンプル運用版)。
  * - シフト発行データとは独立に「その日に出勤した人」だけを記録する。
  * - 欠席/交代は扱わない。書く必要のあるのは「誰が来たか」だけ。
- * - payType は暫定で V として保存され、月末に AdminPayAllocation で 1/V を振り分ける。
+ * - payType は持たない (未確定)。月末に AdminPayAllocation で 1/V が振り分けられる。
  */
 export default function AdminAttendance() {
   const { days } = useSeasonStore();
