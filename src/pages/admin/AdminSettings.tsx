@@ -256,7 +256,7 @@ export default function AdminSettings() {
   }
 
   return (
-    <div className="p-6 space-y-8 max-w-2xl">
+    <div className="p-4 sm:p-6 space-y-8 max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-800">設定</h1>
 
       {successMsg && (
