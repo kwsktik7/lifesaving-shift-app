@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { firebaseSignOut } from '@/utils/auth';
 import {
   LayoutDashboard, CalendarDays, Users,
-  Settings, LogOut, CheckSquare, Send, Coins
+  Settings, LogOut, CheckSquare, Send, Coins, Menu, X
 } from 'lucide-react';
 
 const nav = [
@@ -17,17 +18,38 @@ const nav = [
 
 export default function AdminShell() {
   const navigate = useNavigate();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   function logout() {
     firebaseSignOut();
     navigate('/login');
   }
 
+  function closeMobile() {
+    setMobileOpen(false);
+  }
+
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        <div className="px-4 py-5 border-b border-gray-200">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* モバイル用オーバーレイ (md未満) */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/40 z-40"
+          onClick={closeMobile}
+          aria-hidden
+        />
+      )}
+
+      {/* Sidebar (PC: 常時表示 / モバイル: スライドイン) */}
+      <aside
+        className={`
+          fixed md:static inset-y-0 left-0 z-50
+          w-64 md:w-56 bg-white border-r border-gray-200 flex flex-col
+          transform transition-transform duration-200 ease-out
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+      >
+        <div className="px-4 py-5 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img src="/pwa-192x192.png" alt="逗子SLSC" width={32} height={32} className="rounded-full object-cover" />
             <div>
@@ -35,6 +57,14 @@ export default function AdminShell() {
               <p className="text-xs text-gray-400">管理者</p>
             </div>
           </div>
+          {/* モバイルだけクローズボタン */}
+          <button
+            onClick={closeMobile}
+            className="md:hidden p-1 text-gray-400 hover:text-gray-700"
+            aria-label="メニューを閉じる"
+          >
+            <X size={20} />
+          </button>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {nav.map(({ to, label, icon: Icon, end }) => (
@@ -42,8 +72,9 @@ export default function AdminShell() {
               key={to}
               to={to}
               end={end}
+              onClick={closeMobile}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-blue-50 text-blue-700'
                     : 'text-gray-600 hover:bg-gray-100'
@@ -66,10 +97,27 @@ export default function AdminShell() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      {/* Main */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* モバイル用のヘッダー (md未満で表示) */}
+        <header className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="p-1.5 -ml-1 text-gray-600 hover:text-gray-900"
+            aria-label="メニューを開く"
+          >
+            <Menu size={22} />
+          </button>
+          <div className="flex items-center gap-2">
+            <img src="/pwa-192x192.png" alt="逗子SLSC" width={26} height={26} className="rounded-full object-cover" />
+            <p className="text-sm font-bold text-gray-800">逗子SLSC 管理者</p>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
