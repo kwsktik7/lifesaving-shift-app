@@ -4,167 +4,102 @@ import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { CheckCircle, XCircle, Users, Save, ArrowRightLeft, Sun, Sunset, Circle, Pencil, UserPlus } from 'lucide-react';
-import type { ShiftStatus, AttendanceType } from '@/types';
+import { CheckCircle, Sun, Sunset, UserPlus, Trash2 } from 'lucide-react';
+import type { AttendanceType } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
 
+/**
+ * 勤怠入力ページ (シンプル運用版)。
+ * - シフト発行データとは独立に「その日に出勤した人」だけを記録する。
+ * - 欠席/交代は扱わない。書く必要のあるのは「誰が来たか」だけ。
+ * - payType は暫定で V として保存され、月末に AdminPayAllocation で 1/V を振り分ける。
+ */
 export default function AdminAttendance() {
   const { days } = useSeasonStore();
   const { students } = useStudentStore();
-  const { shifts, updateShift, addReplacementShift, addExtraAttendance } = useShiftStore();
+  const { shifts, updateShift, addExtraAttendance, removeShift } = useShiftStore();
+
+  const openDays = useMemo(
+    () => days.filter((d) => d.isOpen).sort((a, b) => a.date.localeCompare(b.date)),
+    [days],
+  );
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
-    const dayExists = days.find((d) => d.date === today && d.isOpen);
-    return dayExists ? today : (days.filter((d) => d.isOpen)[0]?.date ?? '');
+    const exists = openDays.find((d) => d.date === today);
+    return exists ? today : (openDays[0]?.date ?? '');
   });
 
-  // 交代モーダル用
-  const [replacingShiftId, setReplacingShiftId] = useState<string | null>(null);
-  const [replacementAttendance, setReplacementAttendance] = useState<AttendanceType>('full');
+  // 追加カード state
+  const [adding, setAdding] = useState(false);
+  const [addAttendance, setAddAttendance] = useState<AttendanceType>('full');
 
-  // 当日追加モーダル用 (シフト表に載っていない人を増員)
-  const [addingExtra, setAddingExtra] = useState(false);
-  const [extraAttendance, setExtraAttendance] = useState<AttendanceType>('full');
-
-  // 編集モード（明示的に変更ボタンを押したとき）
-  const [editingDate, setEditingDate] = useState<string | null>(null);
-
-  const publishedDays = days.filter((d) => d.isOpen && shifts.some(
-    (s) => s.date === d.date && (s.status === 'published' || s.status === 'attended' || s.status === 'absent')
-  ));
-
-  // sortStudents順(監視長→副監視長→3→4→2→1→その他)で並べた全学生
+  // 名簿順で並べた active 学生
   const sortedActiveStudents = useMemo(
     () => sortStudents(students.filter((s) => s.isActive)),
-    [students]
+    [students],
   );
-  const activeStudents = sortedActiveStudents;
-  // 学生idから並び順インデックスを引くテーブル
-  const studentOrderIndex = useMemo(() => {
+  const orderIndex = useMemo(() => {
     const m = new Map<string, number>();
     sortedActiveStudents.forEach((s, i) => m.set(s.id, i));
     return m;
   }, [sortedActiveStudents]);
 
-  // 当日のシフトを sortStudents順で並べる
-  const dayShifts = useMemo(() => {
-    const list = shifts.filter(
-      (s) => s.date === selectedDate && s.status !== 'cancelled' && s.status !== 'draft'
-    );
-    // 大きい数字(未登録の学生=Infinity扱い)は末尾に落とす
+  // 当日の出勤者: status='attended' のシフトのみ。名簿順でソート。
+  const dayAttended = useMemo(() => {
+    const list = shifts.filter((s) => s.date === selectedDate && s.status === 'attended');
     return list.sort((a, b) => {
-      const ai = studentOrderIndex.get(a.studentId) ?? Number.MAX_SAFE_INTEGER;
-      const bi = studentOrderIndex.get(b.studentId) ?? Number.MAX_SAFE_INTEGER;
+      const ai = orderIndex.get(a.studentId) ?? Number.MAX_SAFE_INTEGER;
+      const bi = orderIndex.get(b.studentId) ?? Number.MAX_SAFE_INTEGER;
       return ai - bi;
     });
-  }, [shifts, selectedDate, studentOrderIndex]);
+  }, [shifts, selectedDate, orderIndex]);
 
-  const attendedCount = dayShifts.filter((s) => s.status === 'attended').length;
-  const absentCount = dayShifts.filter((s) => s.status === 'absent').length;
-  const pendingCount = dayShifts.filter((s) => s.status === 'published').length;
-  const allDone = pendingCount === 0 && dayShifts.length > 0;
+  const attendedStudentIds = new Set(dayAttended.map((s) => s.studentId));
+  const candidates = sortedActiveStudents.filter((s) => !attendedStudentIds.has(s.id));
 
-  // 全員入力済みでも「欠席で交代未指定」の人が居る間は閲覧モードに自動遷移しない
-  // (交代ボタンが消えて操作できなくなるのを避けるため)
-  const hasUnresolvedAbsence = dayShifts.some((s) => s.status === 'absent' && !s.replacedBy);
-  const isViewMode = allDone && !hasUnresolvedAbsence && editingDate !== selectedDate;
-
-  function markAttended(shiftId: string, attendance: AttendanceType = 'full') {
-    updateShift(shiftId, { status: 'attended' as ShiftStatus, attendance });
+  function handleAdd(studentId: string) {
+    addExtraAttendance(studentId, selectedDate, addAttendance);
+    setAdding(false);
   }
 
-  function markAbsent(shiftId: string) {
-    updateShift(shiftId, { status: 'absent' as ShiftStatus });
-    // 欠席を押した瞬間に閲覧モードへ自動遷移しないよう編集モードを明示固定する
-    setEditingDate(selectedDate);
+  function handleChangeAttendance(shiftId: string, attendance: AttendanceType) {
+    updateShift(shiftId, { attendance });
   }
 
-  function markAllAttended() {
-    for (const shift of dayShifts) {
-      if (shift.status === 'published') {
-        updateShift(shift.id, { status: 'attended' as ShiftStatus, attendance: 'full' as AttendanceType });
-      }
+  function handleRemove(shiftId: string, name: string) {
+    if (confirm(`${name} の出勤記録を削除しますか?`)) {
+      removeShift(shiftId);
     }
-  }
-
-  function handleSave() {
-    // allDoneになった時点で自動的にisViewMode=trueになる
-    // editingDateをクリアして閲覧モードに戻す
-    setEditingDate(null);
-  }
-
-  function handleEdit() {
-    setEditingDate(selectedDate);
   }
 
   function handleDateSelect(date: string) {
     setSelectedDate(date);
-    setReplacingShiftId(null);
-    setAddingExtra(false);
-    setEditingDate(null); // 日付切替時はeditingをリセット
+    setAdding(false);
   }
 
-  function handleReplacement(replacementStudentId: string) {
-    if (!replacingShiftId) return;
-    addReplacementShift(replacingShiftId, replacementStudentId, replacementAttendance);
-    setReplacingShiftId(null);
-  }
-
-  function handleAddExtra(studentId: string) {
-    addExtraAttendance(studentId, selectedDate, extraAttendance);
-    setAddingExtra(false);
-    // 追加後はそのまま編集モードを維持
-    setEditingDate(selectedDate);
-  }
-
-  // 交代候補・追加候補: この日のシフトに入っていない学生
-  const assignedStudentIds = new Set(dayShifts.map((s) => s.studentId));
-  const replacementCandidates = activeStudents.filter((s) => !assignedStudentIds.has(s.id));
-  const extraCandidates = replacementCandidates; // 同じく未割当の学生から選ぶ
-
-  const replacingShift = replacingShiftId ? dayShifts.find((s) => s.id === replacingShiftId) : null;
-  const replacingStudent = replacingShift ? students.find((s) => s.id === replacingShift.studentId) : null;
-
-  // 交代ペアを作成（元の欠席者 → 交代者）
-  const replacementPairs = dayShifts
-    .filter((s) => s.status === 'absent' && s.replacedBy)
-    .map((absentShift) => {
-      const replacementShift = dayShifts.find((s) => s.replacesId === absentShift.id);
-      return {
-        absentShift,
-        absentStudent: students.find((s) => s.id === absentShift.studentId),
-        replacementShift,
-        replacementStudent: replacementShift ? students.find((s) => s.id === replacementShift.studentId) : null,
-      };
-    })
-    .filter((p) => p.replacementStudent);
-
-  // 通常シフト（交代で入った人を除く）
-  const normalShifts = dayShifts.filter((s) => !s.replacesId);
+  const halfCount = dayAttended.filter((s) => s.attendance === 'am' || s.attendance === 'pm').length;
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">勤怠入力</h1>
-      <p className="text-xs text-gray-400 mb-6">各日の出勤/欠席を記録します。交代や半日勤務にも対応。</p>
+      <p className="text-xs text-gray-400 mb-6">
+        日付を選んで、その日に出勤した人を追加します。給与配分(1日/V日)は月末に「給与配分」ページで一括設定します。
+      </p>
 
       <div className="flex gap-6">
-        {/* Date list */}
+        {/* 日付リスト */}
         <aside className="w-48 flex-shrink-0">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
-              公開済みの日
+              開設日
             </div>
             <div className="overflow-y-auto max-h-[600px]">
-              {publishedDays.length === 0 ? (
-                <p className="text-xs text-gray-400 p-4">シフト公開後に入力できます</p>
+              {openDays.length === 0 ? (
+                <p className="text-xs text-gray-400 p-4">シーズン日が未設定です</p>
               ) : (
-                publishedDays.map((d) => {
-                  const dayTotal = shifts.filter((s) => s.date === d.date && s.status !== 'cancelled' && s.status !== 'draft').length;
-                  const dayAttended = shifts.filter((s) => s.date === d.date && s.status === 'attended').length;
-                  const dayAbsent = shifts.filter((s) => s.date === d.date && s.status === 'absent').length;
-                  const dayDone = dayAttended + dayAbsent === dayTotal && dayTotal > 0;
-                  const dayPending = dayTotal - dayAttended - dayAbsent;
+                openDays.map((d) => {
+                  const count = shifts.filter((s) => s.date === d.date && s.status === 'attended').length;
                   return (
                     <button
                       key={d.date}
@@ -174,11 +109,9 @@ export default function AdminAttendance() {
                       onClick={() => handleDateSelect(d.date)}
                     >
                       <span>{format(parseISO(d.date), 'M/d(E)', { locale: ja })}</span>
-                      {dayDone ? (
-                        <span className="text-xs text-green-600 font-bold">✓ 保存済</span>
-                      ) : (
-                        <span className="text-xs text-gray-400">{dayPending}件未入力</span>
-                      )}
+                      <span className={`text-xs ${count > 0 ? 'text-green-600 font-bold' : 'text-gray-400'}`}>
+                        {count > 0 ? `${count}名` : '-'}
+                      </span>
                     </button>
                   );
                 })
@@ -187,520 +120,174 @@ export default function AdminAttendance() {
           </div>
         </aside>
 
-        {/* Attendance panel */}
-        {selectedDate && dayShifts.length > 0 ? (
+        {/* 右ペイン */}
+        {selectedDate ? (
           <div className="flex-1 space-y-4">
-            {/* Summary bar */}
+            {/* ヘッダー */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <h2 className="font-semibold text-gray-800">
-                  {format(parseISO(selectedDate), 'M月d日(E)', { locale: ja })} の勤怠
+                  {format(parseISO(selectedDate), 'M月d日(E)', { locale: ja })} の出勤者
                 </h2>
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1.5">
                     <CheckCircle size={16} className="text-green-600" />
-                    <span className="font-bold text-green-700">{attendedCount}</span>
+                    <span className="font-bold text-green-700">{dayAttended.length}</span>
+                    <span className="text-gray-500">名</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <XCircle size={16} className="text-red-500" />
-                    <span className="font-bold text-red-600">{absentCount}</span>
-                  </div>
-                  {pendingCount > 0 && (
+                  {halfCount > 0 && (
                     <div className="flex items-center gap-1.5">
-                      <Circle size={16} className="text-amber-400" />
-                      <span className="font-bold text-amber-600">{pendingCount}</span>
+                      <Sun size={16} className="text-yellow-500" />
+                      <span className="font-bold text-yellow-700">{halfCount}</span>
+                      <span className="text-gray-500">半日</span>
                     </div>
                   )}
                 </div>
               </div>
-              {/* Progress bar */}
-              <div className="mt-3 flex items-center gap-3">
-                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
-                  {attendedCount > 0 && (
-                    <div className="bg-green-500 h-full" style={{ width: `${(attendedCount / dayShifts.length) * 100}%` }} />
-                  )}
-                  {absentCount > 0 && (
-                    <div className="bg-red-400 h-full" style={{ width: `${(absentCount / dayShifts.length) * 100}%` }} />
+            </div>
+
+            {/* 追加ボタン or 候補リスト */}
+            {!adding ? (
+              <button
+                onClick={() => setAdding(true)}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-3 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors"
+              >
+                <UserPlus size={18} />
+                出勤者を追加
+              </button>
+            ) : (
+              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-emerald-800">
+                    <UserPlus size={16} className="inline mr-1" />
+                    出勤した人を選ぶ
+                  </p>
+                  <button
+                    onClick={() => setAdding(false)}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    閉じる
+                  </button>
+                </div>
+
+                {/* 勤務区分 */}
+                <div className="flex gap-2 text-xs flex-wrap">
+                  <span className="text-gray-500 py-1">勤務:</span>
+                  {(['full', 'am', 'pm'] as AttendanceType[]).map((at) => (
+                    <button
+                      key={at}
+                      onClick={() => setAddAttendance(at)}
+                      className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                        addAttendance === at
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50'
+                      }`}
+                    >
+                      {at === 'full' ? '終日' : at === 'am' ? '午前のみ' : '午後のみ'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 候補リスト */}
+                <div className="bg-white rounded-lg border border-emerald-200 divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                  {candidates.length === 0 ? (
+                    <p className="text-xs text-gray-400 p-3">追加できる学生がいません(全員追加済み)</p>
+                  ) : (
+                    candidates.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => handleAdd(s.id)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-emerald-50 transition-colors"
+                      >
+                        <span className="text-gray-800">
+                          {s.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
+                          {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
+                          {s.name}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {s.grade}{s.role ? ` / ${s.role}` : ''}
+                        </span>
+                      </button>
+                    ))
                   )}
                 </div>
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  {attendedCount + absentCount} / {dayShifts.length}名
-                </span>
+                <p className="text-[11px] text-gray-500">
+                  選んだ人が即座に出勤者リストに追加されます。
+                </p>
               </div>
-            </div>
+            )}
 
-            {/* Action bar: Save / Edit */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {!isViewMode && pendingCount > 0 && (
-                <button
-                  onClick={markAllAttended}
-                  className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                >
-                  <Users size={16} />
-                  未入力を全員出勤にする
-                </button>
-              )}
-              {!isViewMode && (
-                <button
-                  onClick={() => { setAddingExtra(true); setExtraAttendance('full'); setReplacingShiftId(null); }}
-                  className="flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors"
-                  title="シフト表に載っていない人を追加で出勤させる"
-                >
-                  <UserPlus size={16} />
-                  追加
-                </button>
-              )}
-              <div className="flex-1" />
-              {isViewMode ? (
-                <button
-                  onClick={handleEdit}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <Pencil size={16} />
-                  変更する
-                </button>
+            {/* 出勤者リスト */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              {dayAttended.length === 0 ? (
+                <p className="text-sm text-gray-400 p-6 text-center">
+                  出勤者がまだ追加されていません。上の「出勤者を追加」から登録してください。
+                </p>
               ) : (
-                <button
-                  onClick={handleSave}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition-colors ${
-                    allDone
-                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                  }`}
-                >
-                  <Save size={16} />
-                  {allDone ? 'この日の勤怠を保存' : '入力途中で保存'}
-                </button>
-              )}
-            </div>
-
-            {/* ===== VIEW MODE: 保存済み読み取り専用 ===== */}
-            {isViewMode ? (
-              <div className="space-y-4">
-                {/* 通常出勤者リスト */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="divide-y divide-gray-100">
-                    {normalShifts.filter((s) => s.status === 'attended').map((shift) => {
-                      const student = students.find((s) => s.id === shift.studentId);
-                      const isHalf = shift.attendance === 'am' || shift.attendance === 'pm';
-                      return (
-                        <div key={shift.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="divide-y divide-gray-100">
+                  {dayAttended.map((shift) => {
+                    const student = students.find((s) => s.id === shift.studentId);
+                    const isHalf = shift.attendance === 'am' || shift.attendance === 'pm';
+                    return (
+                      <div key={shift.id} className="px-4 py-3 flex items-center gap-3 flex-wrap">
+                        {/* アイコン */}
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${isHalf ? 'bg-yellow-100' : 'bg-green-100'}`}>
                           {isHalf ? (
-                            <div className="w-7 h-7 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                              {shift.attendance === 'am' ? <Sun size={15} className="text-yellow-600" /> : <Sunset size={15} className="text-yellow-600" />}
-                            </div>
+                            shift.attendance === 'am' ? (
+                              <Sun size={15} className="text-yellow-600" />
+                            ) : (
+                              <Sunset size={15} className="text-yellow-600" />
+                            )
                           ) : (
-                            <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                              <CheckCircle size={15} className="text-green-600" />
-                            </div>
+                            <CheckCircle size={15} className="text-green-600" />
                           )}
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800">
-                              {student?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                              {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                              {student?.name}
-                            </p>
-                            <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
-                          </div>
-                          <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                            isHalf ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                          }`}>
-                            {isHalf ? (shift.attendance === 'am' ? '午前のみ' : '午後のみ') : '出勤'}
+                        </div>
+
+                        {/* 氏名 */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-800 truncate">
+                            {student?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
+                            {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
+                            {student?.name ?? '(不明な学生)'}
+                          </p>
+                          <span className="text-xs text-gray-400">
+                            {student?.grade}{student?.role ? ` / ${student.role}` : ''}
                           </span>
                         </div>
-                      );
-                    })}
-                    {/* 欠席者（交代なし） */}
-                    {normalShifts.filter((s) => s.status === 'absent' && !s.replacedBy).map((shift) => {
-                      const student = students.find((s) => s.id === shift.studentId);
-                      return (
-                        <div key={shift.id} className="px-4 py-3 flex items-center gap-3 bg-red-50/50">
-                          <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                            <XCircle size={15} className="text-red-500" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800">
-                              {student?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                              {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                              {student?.name}
-                            </p>
-                            <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
-                          </div>
-                          <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-600">欠席</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
 
-                {/* 交代セクション */}
-                {replacementPairs.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
-                      <ArrowRightLeft size={16} />
-                      交代 ({replacementPairs.length}件)
-                    </h3>
-                    {replacementPairs.map((pair) => {
-                      const repIsHalf = pair.replacementShift && (pair.replacementShift.attendance === 'am' || pair.replacementShift.attendance === 'pm');
-                      return (
-                        <div key={pair.absentShift.id} className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                          <div className="flex items-center gap-3">
-                            {/* 欠席者 */}
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                                <XCircle size={15} className="text-red-500" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-gray-800 truncate">
-                                  {pair.absentStudent?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                                  {pair.absentStudent?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                                  {pair.absentStudent?.name}
-                                </p>
-                                <span className="text-xs text-gray-400">{pair.absentStudent?.grade}{pair.absentStudent?.role ? ` / ${pair.absentStudent.role}` : ''}</span>
-                                <span className="ml-2 text-xs text-red-500 font-medium">欠席</span>
-                              </div>
-                            </div>
-
-                            {/* 矢印 */}
-                            <div className="flex flex-col items-center flex-shrink-0 px-2">
-                              <ArrowRightLeft size={20} className="text-blue-500" />
-                              <span className="text-[10px] text-blue-500 font-bold mt-0.5">交代</span>
-                            </div>
-
-                            {/* 交代者 */}
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${repIsHalf ? 'bg-yellow-100' : 'bg-green-100'}`}>
-                                {repIsHalf ? (
-                                  pair.replacementShift?.attendance === 'am' ? <Sun size={15} className="text-yellow-600" /> : <Sunset size={15} className="text-yellow-600" />
-                                ) : (
-                                  <CheckCircle size={15} className="text-green-600" />
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-gray-800 truncate">
-                                  {pair.replacementStudent?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                                  {pair.replacementStudent?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                                  {pair.replacementStudent?.name}
-                                </p>
-                                <span className="text-xs text-gray-400">{pair.replacementStudent?.grade}{pair.replacementStudent?.role ? ` / ${pair.replacementStudent.role}` : ''}</span>
-                                <span className={`ml-2 text-xs font-medium ${repIsHalf ? 'text-yellow-600' : 'text-green-600'}`}>
-                                  {repIsHalf ? (pair.replacementShift?.attendance === 'am' ? '午前のみ' : '午後のみ') : '終日出勤'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Summary footer (view mode) */}
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 text-sm font-bold text-green-700 mb-2">
-                    <CheckCircle size={16} />
-                    保存済み
-                  </div>
-                  <div className="flex items-center gap-4 flex-wrap text-sm">
-                    <span className="text-gray-700">出勤 <b className="text-green-700">{attendedCount}</b>名</span>
-                    <span className="text-gray-700">欠席 <b className="text-red-600">{absentCount}</b>名</span>
-                    {dayShifts.some((s) => s.status === 'attended' && (s.attendance === 'am' || s.attendance === 'pm')) && (
-                      <span className="text-gray-700">半日 <b className="text-yellow-600">{dayShifts.filter((s) => s.status === 'attended' && (s.attendance === 'am' || s.attendance === 'pm')).length}</b>名</span>
-                    )}
-                    {replacementPairs.length > 0 && (
-                      <span className="text-gray-700">交代 <b className="text-blue-600">{replacementPairs.length}</b>件</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-green-600 mt-2">「給与配分」ページで1/V配分に反映されます。</p>
-                </div>
-              </div>
-            ) : (
-              /* ===== EDIT MODE: 編集モード ===== */
-              <>
-                {/* Student list */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="divide-y divide-gray-100">
-                    {dayShifts.map((shift) => {
-                      const student = students.find((s) => s.id === shift.studentId);
-                      const isAttended = shift.status === 'attended';
-                      const isAbsent = shift.status === 'absent';
-                      const isPending = shift.status === 'published';
-                      const isHalf = isAttended && (shift.attendance === 'am' || shift.attendance === 'pm');
-                      const isReplacement = !!shift.replacesId;
-
-                      // 交代された元の人の名前
-                      const originalShift = shift.replacesId ? shifts.find((s) => s.id === shift.replacesId) : null;
-                      const originalStudent = originalShift ? students.find((s) => s.id === originalShift.studentId) : null;
-
-                      // この人の代わりに入った人
-                      const replacedByStudent = shift.replacedBy ? students.find((s) => s.id === shift.replacedBy) : null;
-
-                      return (
-                        <div key={shift.id} className={`px-4 py-3.5 ${isPending ? 'bg-amber-50/50' : isReplacement ? 'bg-blue-50/30' : ''}`}>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {/* Status icon */}
-                              {isAttended ? (
-                                isHalf ? (
-                                  <div className="w-7 h-7 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
-                                    {shift.attendance === 'am' ? <Sun size={15} className="text-yellow-600" /> : <Sunset size={15} className="text-yellow-600" />}
-                                  </div>
-                                ) : (
-                                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                                    <CheckCircle size={15} className="text-green-600" />
-                                  </div>
-                                )
-                              ) : isAbsent ? (
-                                <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                                  <XCircle size={15} className="text-red-500" />
-                                </div>
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                                  <Circle size={15} className="text-gray-400" />
-                                </div>
-                              )}
-                              <div>
-                                <p className="font-medium text-gray-800">
-                                  {student?.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                                  {student?.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                                  {student?.name ?? '不明'}
-                                  {isHalf && (
-                                    <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold">
-                                      {shift.attendance === 'am' ? '午前のみ' : '午後のみ'}
-                                    </span>
-                                  )}
-                                  {isReplacement && originalStudent && (
-                                    <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                                      ← {originalStudent.name}の代わり
-                                    </span>
-                                  )}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-400">{student?.grade}{student?.role ? ` / ${student.role}` : ''}</span>
-                                  {isAttended && !isHalf && <span className="text-xs text-green-600 font-medium">出勤（終日）</span>}
-                                  {isHalf && <span className="text-xs text-yellow-600 font-medium">{shift.attendance === 'am' ? '午前のみ（半額）' : '午後のみ（半額）'}</span>}
-                                  {isAbsent && !replacedByStudent && <span className="text-xs text-red-500 font-medium">欠席</span>}
-                                  {isAbsent && replacedByStudent && <span className="text-xs text-red-500 font-medium">欠席 → {replacedByStudent.name}が交代</span>}
-                                  {isPending && <span className="text-xs text-amber-500 font-medium">未入力</span>}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex gap-1.5">
-                              {/* 出勤（終日） */}
-                              <button
-                                onClick={() => markAttended(shift.id, 'full')}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                  isAttended && shift.attendance === 'full'
+                        {/* 勤務区分切替 */}
+                        <div className="flex gap-1">
+                          {(['full', 'am', 'pm'] as AttendanceType[]).map((at) => (
+                            <button
+                              key={at}
+                              onClick={() => handleChangeAttendance(shift.id, at)}
+                              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                                shift.attendance === at
+                                  ? at === 'full'
                                     ? 'bg-green-600 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-600'
-                                }`}
-                              >
-                                <CheckCircle size={14} />
-                                出勤
-                              </button>
-                              {/* 午前のみ */}
-                              <button
-                                onClick={() => markAttended(shift.id, 'am')}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                  isAttended && shift.attendance === 'am'
-                                    ? 'bg-yellow-500 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-yellow-50 hover:text-yellow-600'
-                                }`}
-                                title="午前のみ（半額）"
-                              >
-                                <Sun size={14} />
-                                午前
-                              </button>
-                              {/* 午後のみ */}
-                              <button
-                                onClick={() => markAttended(shift.id, 'pm')}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                  isAttended && shift.attendance === 'pm'
-                                    ? 'bg-yellow-500 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-yellow-50 hover:text-yellow-600'
-                                }`}
-                                title="午後のみ（半額）"
-                              >
-                                <Sunset size={14} />
-                                午後
-                              </button>
-                              {/* 欠席 */}
-                              <button
-                                onClick={() => markAbsent(shift.id)}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                  isAbsent
-                                    ? 'bg-red-600 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600'
-                                }`}
-                              >
-                                <XCircle size={14} />
-                                欠席
-                              </button>
-                              {/* 交代ボタン（欠席時のみ表示） */}
-                              {isAbsent && !shift.replacedBy && (
-                                <button
-                                  onClick={() => { setReplacingShiftId(shift.id); setReplacementAttendance('full'); setAddingExtra(false); }}
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
-                                  title="交代者を選ぶ"
-                                >
-                                  <ArrowRightLeft size={14} />
-                                  交代
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                                    : 'bg-yellow-500 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              {at === 'full' ? '終日' : at === 'am' ? '午前' : '午後'}
+                            </button>
+                          ))}
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        {/* 削除 */}
+                        <button
+                          onClick={() => handleRemove(shift.id, student?.name ?? '')}
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                          title="この出勤を削除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-
-                {/* 当日追加カード */}
-                {addingExtra && (
-                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-bold text-emerald-800">
-                        <UserPlus size={16} className="inline mr-1" />
-                        当日追加する出勤者を選択
-                      </p>
-                      <button
-                        onClick={() => setAddingExtra(false)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        キャンセル
-                      </button>
-                    </div>
-
-                    {/* 勤務区分 */}
-                    <div className="flex gap-2 text-xs">
-                      <span className="text-gray-500 py-1">勤務:</span>
-                      {(['full', 'am', 'pm'] as AttendanceType[]).map((at) => (
-                        <button
-                          key={at}
-                          onClick={() => setExtraAttendance(at)}
-                          className={`px-3 py-1 rounded-full font-medium transition-colors ${
-                            extraAttendance === at
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50'
-                          }`}
-                        >
-                          {at === 'full' ? '終日' : at === 'am' ? '午前のみ' : '午後のみ'}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* 学生候補 */}
-                    <div className="bg-white rounded-lg border border-emerald-200 divide-y divide-gray-100 max-h-48 overflow-y-auto">
-                      {extraCandidates.length === 0 ? (
-                        <p className="text-xs text-gray-400 p-3">追加できる学生がいません(全員シフトに入っています)</p>
-                      ) : (
-                        extraCandidates.map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => handleAddExtra(s.id)}
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-emerald-50 transition-colors"
-                          >
-                            <span className="text-gray-800">
-                              {s.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                              {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                              {s.name}
-                            </span>
-                            <span className="text-xs text-gray-400">{s.grade}{s.role ? ` / ${s.role}` : ''}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                    <p className="text-[11px] text-gray-500">
-                      追加した人は V日として記録されます(給与配分ページで1日/V日を変更可能)。
-                    </p>
-                  </div>
-                )}
-
-                {/* Replacement modal */}
-                {replacingShiftId && replacingStudent && (
-                  <div className="bg-blue-50 border border-blue-300 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-bold text-blue-800">
-                        <ArrowRightLeft size={16} className="inline mr-1" />
-                        {replacingStudent.name}の交代者を選択
-                      </p>
-                      <button
-                        onClick={() => setReplacingShiftId(null)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        キャンセル
-                      </button>
-                    </div>
-
-                    {/* Attendance type for replacement */}
-                    <div className="flex gap-2 text-xs">
-                      <span className="text-gray-500 py-1">交代者の勤務:</span>
-                      {(['full', 'am', 'pm'] as AttendanceType[]).map((at) => (
-                        <button
-                          key={at}
-                          onClick={() => setReplacementAttendance(at)}
-                          className={`px-3 py-1 rounded-full font-medium transition-colors ${
-                            replacementAttendance === at
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-blue-50'
-                          }`}
-                        >
-                          {at === 'full' ? '終日' : at === 'am' ? '午前のみ' : '午後のみ'}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Candidate list */}
-                    <div className="bg-white rounded-lg border border-blue-200 divide-y divide-gray-100 max-h-48 overflow-y-auto">
-                      {replacementCandidates.length === 0 ? (
-                        <p className="text-xs text-gray-400 p-3">交代可能な学生がいません</p>
-                      ) : (
-                        replacementCandidates.map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => handleReplacement(s.id)}
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
-                          >
-                            <span className="text-gray-800">
-                              {s.isLeader && <span className="text-red-500 mr-1" style={{ fontSize: '10px' }}>★</span>}
-                              {s.hasPwc && <span className="text-blue-500 mr-1" style={{ fontSize: '10px' }}>P</span>}
-                              {s.name}
-                            </span>
-                            <span className="text-xs text-gray-400">{s.grade}{s.role ? ` / ${s.role}` : ''}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Summary footer (edit mode) */}
-                {!replacingShiftId && !addingExtra && (
-                  <div className={`rounded-xl p-4 text-sm ${allDone ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <span className="text-gray-700">出勤 <b className="text-green-700">{attendedCount}</b>名</span>
-                      <span className="text-gray-700">欠席 <b className="text-red-600">{absentCount}</b>名</span>
-                      {pendingCount > 0 && (
-                        <span className="text-gray-700">未入力 <b className="text-amber-600">{pendingCount}</b>名</span>
-                      )}
-                      {dayShifts.some((s) => s.status === 'attended' && (s.attendance === 'am' || s.attendance === 'pm')) && (
-                        <span className="text-gray-700">半日 <b className="text-yellow-600">{dayShifts.filter((s) => s.status === 'attended' && (s.attendance === 'am' || s.attendance === 'pm')).length}</b>名</span>
-                      )}
-                      {replacementPairs.length > 0 && (
-                        <span className="text-gray-700">交代 <b className="text-blue-600">{replacementPairs.length}</b>件</span>
-                      )}
-                    </div>
-                    {allDone && (
-                      <p className="text-xs text-green-600 mt-2">全員分の入力が完了しています。保存ボタンを押してください。</p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ) : selectedDate ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-            この日はシフトが公開されていません
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
