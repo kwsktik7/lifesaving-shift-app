@@ -26,7 +26,7 @@ interface StudentState {
 const COLLECTION = 'students';
 
 export const useStudentStore = isFirebaseConfigured
-  ? create<StudentState>()((set, _get) => {
+  ? create<StudentState>()((set, get) => {
       subscribeCollection(
         COLLECTION,
         (id, data) => ({ ...data, id } as Student),
@@ -37,9 +37,19 @@ export const useStudentStore = isFirebaseConfigured
       return {
         students: [],
         _ready: false,
-        addStudent: async ({ pin, ...data }) => {
+        addStudent: async ({ pin, order, ...data }) => {
           const id = crypto.randomUUID();
           const hasPin = !!pin;
+          // order 未指定 (管理者画面からの個別追加) なら、既存の最大 order + 1 を採番。
+          // これで初期名簿 (#1〜#53) の下に追加順で並ぶ。
+          let effectiveOrder = order;
+          if (effectiveOrder === undefined) {
+            const maxOrder = get().students.reduce(
+              (acc, s) => Math.max(acc, s.order ?? 0),
+              0,
+            );
+            effectiveOrder = maxOrder + 1;
+          }
           const student: Student = {
             ...data,
             id,
@@ -48,6 +58,7 @@ export const useStudentStore = isFirebaseConfigured
             role: data.role ?? '',
             hasPwc: data.hasPwc ?? false,
             isLeader: data.isLeader ?? false,
+            order: effectiveOrder,
             // birthday フィールドに PIN の plaintext を保持して管理者から見えるようにする。
             // PIN 未設定なら空文字で初期化（後から学生が設定する）。
             birthday: hasPin ? pin! : '',
@@ -123,12 +134,21 @@ export const useStudentStore = isFirebaseConfigured
     })
   : create<StudentState>()(
       persist(
-        (set) => ({
+        (set, get) => ({
           students: [],
           _ready: true,
-          addStudent: async ({ pin, ...data }) => {
+          addStudent: async ({ pin, order, ...data }) => {
             const id = crypto.randomUUID();
             const hasPin = !!pin;
+            // order 未指定なら既存の最大 order + 1 を採番 (Firebase版と同じロジック)
+            let effectiveOrder = order;
+            if (effectiveOrder === undefined) {
+              const maxOrder = get().students.reduce(
+                (acc, s) => Math.max(acc, s.order ?? 0),
+                0,
+              );
+              effectiveOrder = maxOrder + 1;
+            }
             set((state) => ({
               students: [
                 ...state.students,
@@ -140,6 +160,7 @@ export const useStudentStore = isFirebaseConfigured
                   role: data.role ?? '',
                   hasPwc: data.hasPwc ?? false,
                   isLeader: data.isLeader ?? false,
+                  order: effectiveOrder,
                   birthday: hasPin ? pin! : '',
                 },
               ],
