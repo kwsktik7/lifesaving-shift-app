@@ -3,6 +3,7 @@ import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { sortStudents } from '@/utils/studentSort';
 import { Lock, Unlock } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -76,7 +77,8 @@ export default function AdminAvailability() {
     }
   }
 
-  const activeStudents = students.filter((s) => s.isActive);
+  // 名簿順(order優先)で並べる。日別ビュー・学生別ビュー両方に反映される。
+  const activeStudents = sortStudents(students.filter((s) => s.isActive));
 
   // availMap: date → studentId → Availability
   const availMap = useMemo(() => {
