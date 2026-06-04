@@ -18,6 +18,8 @@ interface ShiftState {
   addExtraAttendance: (studentId: string, date: string, attendance: AttendanceType) => void;
   removeShift: (id: string) => void;
   publishDay: (date: string) => void;
+  /** その日の未確定(draft)・公開済(published)シフトを全削除して白紙に戻す (組み直し用)。勤怠済みは触らない。 */
+  clearDayShifts: (date: string) => void;
   getShiftsForDate: (date: string) => ShiftAssignment[];
   getShiftsForStudent: (studentId: string) => ShiftAssignment[];
   getSummaries: () => StudentSummary[];
@@ -214,6 +216,21 @@ export const useShiftStore = isFirebaseConfigured
             ).catch((e) => console.warn('[shifts] publish', e));
           }
         },
+        clearDayShifts: async (date) => {
+          // draft / published のみ削除。attended / absent (勤怠済み) は安全のため残す。
+          const toDelete = get().shifts.filter(
+            (s) => s.date === date && (s.status === 'draft' || s.status === 'published'),
+          );
+          if (toDelete.length === 0) return;
+          set((state) => ({
+            shifts: state.shifts.filter(
+              (s) => !(s.date === date && (s.status === 'draft' || s.status === 'published')),
+            ),
+          }));
+          firestoreBatchWrite(
+            toDelete.map((s) => ({ type: 'delete' as const, collection: COLLECTION, docId: s.id })),
+          ).catch((e) => console.warn('[shifts] clearDay', e));
+        },
         getShiftsForDate: (date) =>
           get().shifts.filter((s) => s.date === date && s.status !== 'cancelled'),
         getShiftsForStudent: (studentId) =>
@@ -323,6 +340,12 @@ export const useShiftStore = isFirebaseConfigured
             set((state) => ({
               shifts: state.shifts.map((s) =>
                 s.date === date && s.status === 'draft' ? { ...s, status: 'published' as ShiftStatus } : s,
+              ),
+            })),
+          clearDayShifts: (date) =>
+            set((state) => ({
+              shifts: state.shifts.filter(
+                (s) => !(s.date === date && (s.status === 'draft' || s.status === 'published')),
               ),
             })),
           getShiftsForDate: (date) =>

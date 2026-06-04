@@ -5,7 +5,7 @@ import { useAvailabilityStore } from '@/store/availabilityStore';
 import { useShiftStore } from '@/store/shiftStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { Check, X, Plus } from 'lucide-react';
+import { Check, X, Plus, RotateCcw } from 'lucide-react';
 import type { Student, ShiftAssignment, AvailabilityStatus, AttendanceType } from '@/types';
 import ShiftGrid from '@/components/ShiftGrid';
 import { sortStudents } from '@/utils/studentSort';
@@ -14,7 +14,7 @@ export default function AdminShiftEdit() {
   const { days, updateDay } = useSeasonStore();
   const { students } = useStudentStore();
   const { availabilities } = useAvailabilityStore();
-  const { shifts, assignShift, removeShift, publishDay, getShiftsForDate } = useShiftStore();
+  const { shifts, assignShift, removeShift, publishDay, clearDayShifts, getShiftsForDate } = useShiftStore();
 
   const openDays = days.filter((d) => d.isOpen);
   const [selectedDate, setSelectedDate] = useState<string>(openDays[0]?.date ?? '');
@@ -50,6 +50,14 @@ export default function AdminShiftEdit() {
 
   function handlePublish() {
     publishDay(selectedDate);
+  }
+
+  function handleClearDay() {
+    if (dayShifts.length === 0) return;
+    const label = format(parseISO(selectedDate), 'M月d日(E)', { locale: ja });
+    if (confirm(`${label} のシフト割り当てをすべて取り消して白紙に戻します。\nよろしいですか？（学生が提出した可否データは消えません）`)) {
+      clearDayShifts(selectedDate);
+    }
   }
 
   function handleAddStudent(studentId: string) {
@@ -101,15 +109,27 @@ export default function AdminShiftEdit() {
           </div>
 
           {/* Actions */}
-          {draftCount > 0 && (
-            <button
-              onClick={handlePublish}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-            >
-              <Check size={16} />
-              確定・公開 ({draftCount}件)
-            </button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {draftCount > 0 && (
+              <button
+                onClick={handlePublish}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+              >
+                <Check size={16} />
+                確定・公開 ({draftCount}件)
+              </button>
+            )}
+            {dayShifts.length > 0 && (
+              <button
+                onClick={handleClearDay}
+                className="flex items-center gap-2 bg-white border border-red-300 text-red-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
+                title="この日のシフト割り当てを全て取り消して白紙に戻す"
+              >
+                <RotateCcw size={16} />
+                シフトを組み直す
+              </button>
+            )}
+          </div>
 
           {/* Available students - 監視長/副監視長 / PWC免許保持者 / その他 の3枠に分けて表示。
               各枠内は sortStudents 順(監視長→副監視長→3→4→2→1)で並ぶ。
