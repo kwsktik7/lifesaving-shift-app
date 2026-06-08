@@ -42,7 +42,7 @@ function getSeasonMonthKeys(seasonStart: string, seasonEnd: string): { key: stri
 
 export default function AdminSettings() {
   const { students, addStudent, updateStudent, deleteStudent, updateStudentPin } = useStudentStore();
-  const { settings, updateSettings, setAdminPassword, verifyAdminPassword } = useSettingsStore();
+  const { settings, updateSettings, setAdminPassword, verifyAdminPassword, setOwnerPassword } = useSettingsStore();
   const { availabilities } = useAvailabilityStore();
   useSeasonStore();
 
@@ -56,6 +56,7 @@ export default function AdminSettings() {
   }, [availabilities]);
 
   const [newAdminPass, setNewAdminPass] = useState('');
+  const [newOwnerPass, setNewOwnerPass] = useState('');
 
   // 学生追加フォーム
   const [newStudentName, setNewStudentName] = useState('');
@@ -237,6 +238,7 @@ export default function AdminSettings() {
 
   // パスワード変更状態
   const [savingAdminPw, setSavingAdminPw] = useState(false);
+  const [savingOwnerPw, setSavingOwnerPw] = useState(false);
 
   async function handleSetAdminPassword() {
     if (!newAdminPass) return;
@@ -252,6 +254,23 @@ export default function AdminSettings() {
       setErrorMsg(`保存に失敗しました: ${msg}`);
     } finally {
       setSavingAdminPw(false);
+    }
+  }
+
+  async function handleSetOwnerPassword() {
+    if (!newOwnerPass) return;
+    setSavingOwnerPw(true);
+    try {
+      await setOwnerPassword(newOwnerPass);
+      setNewOwnerPass('');
+      setSuccessMsg('専用パスワードを変更しました');
+      setTimeout(() => setSuccessMsg(''), 3000);
+      setErrorMsg('');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`保存に失敗しました: ${msg}`);
+    } finally {
+      setSavingOwnerPw(false);
     }
   }
 
@@ -415,6 +434,45 @@ export default function AdminSettings() {
               {savingAdminPw ? '保存中...' : '保存'}
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* Owner password (給与配分・設定ページの専用ロック) */}
+      <section>
+        <h2 className="text-base font-semibold text-gray-700 mb-2">専用パスワード（給与配分・設定）</h2>
+        <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+          「給与配分」と「設定」ページに、管理者パスワードとは別のパスワードを重ねてかけます。
+          自分だけがこの2ページを開けるようにするための鍵です。<br />
+          現在: {settings.ownerPasswordHash
+            ? <span className="text-green-700 font-medium">設定済み（ロック有効）</span>
+            : <span className="text-gray-500 font-medium">未設定（ロックなし）</span>}
+        </p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex gap-3 flex-wrap">
+            <input
+              type="password"
+              className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={settings.ownerPasswordHash ? '新しい専用パスワード' : '専用パスワードを設定'}
+              value={newOwnerPass}
+              onChange={(e) => setNewOwnerPass(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSetOwnerPassword(); }}
+            />
+            <button
+              onClick={handleSetOwnerPassword}
+              disabled={savingOwnerPw || !newOwnerPass}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !savingOwnerPw && newOwnerPass
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {savingOwnerPw ? '保存中...' : '保存'}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+            設定すると、次回からこの2ページを開く際にこのパスワードが必要になります（ログイン中は1回入力すればOK）。
+            このパスワードを忘れると給与配分・設定ページが開けなくなるので、忘れないよう注意してください。
+          </p>
         </div>
       </section>
 

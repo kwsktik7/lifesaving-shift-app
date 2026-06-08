@@ -61,6 +61,8 @@ export interface ShiftAssignment {
 
 export interface AppSettings {
   adminPasswordHash: string;
+  /** 給与配分・設定ページに重ねてかける専用パスワード(オーナー専用)。空文字ならロックなし */
+  ownerPasswordHash: string;
   seasonStart: string; // "YYYY-MM-DD"
   seasonEnd: string;   // "YYYY-MM-DD"
   fullPayAmount: number; // 9100

@@ -22,6 +22,7 @@ import AdminShiftPublish from '@/pages/admin/AdminShiftPublish';
 import AdminPayAllocation from '@/pages/admin/AdminPayAllocation';
 import AdminAttendance from '@/pages/admin/AdminAttendance';
 import AdminSettings from '@/pages/admin/AdminSettings';
+import OwnerGate from '@/components/OwnerGate';
 
 // Student pages
 import StudentHome from '@/pages/student/StudentHome';
@@ -70,9 +71,9 @@ export default function App() {
           <Route path="availability" element={<AdminAvailability />} />
           <Route path="shift/edit" element={<AdminShiftEdit />} />
           <Route path="shift/publish" element={<AdminShiftPublish />} />
-          <Route path="pay" element={<AdminPayAllocation />} />
+          <Route path="pay" element={<OwnerGate><AdminPayAllocation /></OwnerGate>} />
           <Route path="attendance" element={<AdminAttendance />} />
-          <Route path="settings" element={<AdminSettings />} />
+          <Route path="settings" element={<OwnerGate><AdminSettings /></OwnerGate>} />
         </Route>
 
         {/* Student routes */}

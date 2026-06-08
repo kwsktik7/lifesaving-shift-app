@@ -40,6 +40,8 @@ export function setSession(session: Session): void {
 
 export function clearSession(): void {
   sessionStorage.removeItem(SESSION_KEY);
+  // オーナー専用ページ(給与配分・設定)の解錠状態もログアウトで破棄する
+  sessionStorage.removeItem('zushi_owner_unlocked');
 }
 
 // --- Firebase Auth ---

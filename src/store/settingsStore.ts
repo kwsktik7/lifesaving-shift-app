@@ -7,13 +7,16 @@ import { isFirebaseConfigured, subscribeDoc, firestoreSet, firestoreUpdate } fro
 interface SettingsState {
   settings: AppSettings;
   _ready: boolean;
-  updateSettings: (patch: Partial<Omit<AppSettings, 'adminPasswordHash'>>) => Promise<void>;
+  updateSettings: (patch: Partial<Omit<AppSettings, 'adminPasswordHash' | 'ownerPasswordHash'>>) => Promise<void>;
   setAdminPassword: (password: string) => Promise<void>;
   verifyAdminPassword: (password: string) => boolean;
+  setOwnerPassword: (password: string) => Promise<void>;
+  verifyOwnerPassword: (password: string) => boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   adminPasswordHash: '',
+  ownerPasswordHash: '',
   seasonStart: '2026-07-03',
   seasonEnd: '2026-09-05',
   fullPayAmount: 9100,
@@ -77,6 +80,18 @@ export const useSettingsStore = isFirebaseConfigured
           if (!hash) return true;
           return hash === hashPin(password);
         },
+        setOwnerPassword: async (password) => {
+          const ownerPasswordHash = hashPin(password);
+          set((state) => ({ settings: { ...state.settings, ownerPasswordHash } }));
+          firestoreUpdate(COLLECTION, DOC_ID, { ownerPasswordHash }).catch((e) => {
+            console.warn('[settings] setOwnerPassword promise did not resolve', e);
+          });
+        },
+        verifyOwnerPassword: (password) => {
+          const hash = get().settings.ownerPasswordHash;
+          if (!hash) return true;
+          return hash === hashPin(password);
+        },
       };
     })
   : create<SettingsState>()(
@@ -94,6 +109,16 @@ export const useSettingsStore = isFirebaseConfigured
           },
           verifyAdminPassword: (password) => {
             const hash = get().settings.adminPasswordHash;
+            if (!hash) return true;
+            return hash === hashPin(password);
+          },
+          setOwnerPassword: async (password) => {
+            set((state) => ({
+              settings: { ...state.settings, ownerPasswordHash: hashPin(password) },
+            }));
+          },
+          verifyOwnerPassword: (password) => {
+            const hash = get().settings.ownerPasswordHash;
             if (!hash) return true;
             return hash === hashPin(password);
           },
