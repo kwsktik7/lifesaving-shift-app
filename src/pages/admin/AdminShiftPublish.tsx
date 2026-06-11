@@ -58,6 +58,13 @@ export default function AdminShiftPublish() {
 
   const leaderCount = dayMembers.filter((m) => m.student!.isLeader).length;
   const pwcCount = dayMembers.filter((m) => m.student!.hasPwc).length;
+  // 学年別の人数 (4年→3年→2年→1年→その他 の順で、0名の学年は出さない)
+  const GRADE_ORDER = ['4年', '3年', '2年', '1年'];
+  const gradeCounts = GRADE_ORDER
+    .map((g) => ({ grade: g, count: dayMembers.filter((m) => m.student!.grade === g).length }))
+    .filter((g) => g.count > 0);
+  const otherGradeCount = dayMembers.filter((m) => !GRADE_ORDER.includes(m.student!.grade)).length;
+  if (otherGradeCount > 0) gradeCounts.push({ grade: 'その他', count: otherGradeCount });
 
   return (
     <div className="p-6">
@@ -251,6 +258,21 @@ export default function AdminShiftPublish() {
                   <p className="text-xl font-bold text-blue-700">{pwcCount}<span className="text-xs font-normal text-blue-400">名</span></p>
                 </div>
               </div>
+
+              {/* 学年別の内訳 */}
+              {gradeCounts.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs text-gray-400 mb-1.5">学年別</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {gradeCounts.map((g) => (
+                      <div key={g.grade} className="bg-gray-50 rounded-lg border border-gray-200 p-2 text-center">
+                        <p className="text-xs text-gray-500">{g.grade}</p>
+                        <p className="text-lg font-bold text-gray-800">{g.count}<span className="text-xs font-normal text-gray-400">名</span></p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
