@@ -47,17 +47,16 @@ export function exportAttendanceReport(
   const orderedStudents = sortStudents(students.filter((s) => s.isActive));
   const summaryRows = orderedStudents.map((student) => {
     const cells = allDates.map((date) => {
+      // 勤怠表(実績表)は「実際に出勤した(status=attended)」シフトだけを反映する。
+      // シフト作成(draft)・シフト発行(published)は勤怠には一切出さない。
+      // → シフトを組んだだけで実績表に印がつく問題を防ぐ。
       const shift = filteredShifts.find(
-        (s) => s.studentId === student.id && s.date === date && s.status !== 'cancelled' && s.status !== 'draft'
+        (s) => s.studentId === student.id && s.date === date && s.status === 'attended'
       );
       if (!shift) return '-';
-      if (shift.status === 'absent') return '欠';
-      if (shift.status === 'attended') {
-        const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
-        // 未配分(payType undefined)は ? 表示
-        return (shift.payType ?? '?') + half;
-      }
-      return '○'; // published but not yet confirmed
+      const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
+      // 給与配分前(payType undefined)は出勤印「○」、配分後は「1」/「V」を表示
+      return (shift.payType ?? '○') + half;
     });
 
     // Pay = attended only (half-day = half pay) — 未配分は 0 円扱い
