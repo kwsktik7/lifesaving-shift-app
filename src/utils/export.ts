@@ -127,6 +127,107 @@ export function exportAttendanceReport(
   XLSX.writeFile(wb, fileName);
 }
 
+/** Excelの数式インジェクション対策: = + - @ で始まる値をシングルクォートで無害化する */
+function safeText(value: string): string {
+  if (!value) return '';
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+/**
+ * 勤怠表(出勤記録のみ)をExcel出力する。給与情報は一切含まない。
+ * 「誰が・いつ出勤したか」だけを月単位で一覧にするためのもの。
+ * 給与込みの勤怠表が必要な場合は exportAttendanceReport (給与配分ページ) を使う。
+ *
+ * 対象日は「開設日」と「実際に出勤記録がある日」の和集合。
+ * (開設フラグを後から外した日でも、記録済みの出勤が表から消えないようにするため)
+ * 行は在籍中の学生に加え、その月に出勤記録がある退会者も含める(記録の取りこぼし防止)。
+ */
+export function exportAttendanceOnlyXlsx(
+  students: Student[],
+  shifts: ShiftAssignment[],
+  seasonDays: SeasonDay[],
+  monthKey: string, // "2026-07" 形式。シート名とファイル名に使う
+  startDate: string,
+  endDate: string,
+): void {
+  const attendedInMonth = shifts.filter(
+    (s) => s.status === 'attended' && s.date >= startDate && s.date <= endDate,
+  );
+
+  const dateSet = new Set<string>(
+    seasonDays
+      .filter((d) => d.isOpen && d.date >= startDate && d.date <= endDate)
+      .map((d) => d.date),
+  );
+  for (const s of attendedInMonth) dateSet.add(s.date);
+  const allDates = Array.from(dateSet).sort();
+  if (allDates.length === 0) return;
+
+  const attendedIds = new Set(attendedInMonth.map((s) => s.studentId));
+  const orderedStudents = sortStudents(students.filter((s) => s.isActive || attendedIds.has(s.id)));
+
+  // studentId:date → シフト の索引
+  const byKey = new Map<string, ShiftAssignment>();
+  for (const s of attendedInMonth) byKey.set(`${s.studentId}:${s.date}`, s);
+
+  const header1 = [
+    '学年', '役職', '氏名',
+    ...allDates.map((d) => format(parseISO(d), 'M/d')),
+    '出勤回数', '出勤日数',
+  ];
+  const header2 = [
+    '', '', '',
+    ...allDates.map((d) => format(parseISO(d), 'E', { locale: ja })),
+    '', '',
+  ];
+
+  const rows = orderedStudents.map((student) => {
+    let times = 0; // 出勤した回数(半日も1回と数える)
+    let days = 0;  // 出勤日数(半日は0.5)
+    const cells = allDates.map((date) => {
+      const shift = byKey.get(`${student.id}:${date}`);
+      if (!shift) return '';
+      times += 1;
+      if (shift.attendance === 'am') { days += 0.5; return '午前'; }
+      if (shift.attendance === 'pm') { days += 0.5; return '午後'; }
+      days += 1;
+      return '○';
+    });
+    return [
+      safeText(student.grade),
+      safeText(student.role),
+      safeText(student.name),
+      ...cells,
+      times,
+      days,
+    ];
+  });
+
+  // 日別の出勤人数 / うちPWC保持者。表の中身と必ず一致するよう同じ索引から数える。
+  const dailyTotals = allDates.map(
+    (date) => orderedStudents.filter((st) => byKey.has(`${st.id}:${date}`)).length,
+  );
+  const dailyPwc = allDates.map(
+    (date) => orderedStudents.filter((st) => st.hasPwc && byKey.has(`${st.id}:${date}`)).length,
+  );
+  const totalRow = ['', '', '合計', ...dailyTotals.map((n) => n || ''), '', ''];
+  const pwcRow = ['', '', 'PWC', ...dailyPwc.map((n) => n || ''), '', ''];
+
+  const ws = XLSX.utils.aoa_to_sheet([header1, header2, ...rows, totalRow, pwcRow]);
+  ws['!cols'] = [
+    { wch: 6 },  // 学年
+    { wch: 12 }, // 役職
+    { wch: 14 }, // 氏名
+    ...allDates.map(() => ({ wch: 6 })),
+    { wch: 9 },  // 出勤回数
+    { wch: 9 },  // 出勤日数
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, `勤怠表_${monthKey}`);
+  XLSX.writeFile(wb, `勤怠表_${monthKey}.xlsx`);
+}
+
 export function exportAllData(): string {
   const keys = ['students', 'season_days', 'availability', 'shifts', 'settings'];
   const data: Record<string, unknown> = {};

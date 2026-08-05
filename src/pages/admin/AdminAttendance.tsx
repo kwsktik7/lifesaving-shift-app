@@ -2,11 +2,14 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { CheckCircle, Sun, Sunset, UserPlus, Trash2 } from 'lucide-react';
+import { CheckCircle, Sun, Sunset, UserPlus, Trash2, Download } from 'lucide-react';
 import type { AttendanceType } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
+import { getMonthRanges } from '@/utils/monthRanges';
+import { exportAttendanceOnlyXlsx } from '@/utils/export';
 
 /**
  * 勤怠入力ページ (シンプル運用版・スマホ対応)。
@@ -19,6 +22,7 @@ export default function AdminAttendance() {
   const { days } = useSeasonStore();
   const { students } = useStudentStore();
   const { shifts, updateShift, addExtraAttendance, removeShift } = useShiftStore();
+  const { settings } = useSettingsStore();
 
   const openDays = useMemo(
     () => days.filter((d) => d.isOpen).sort((a, b) => a.date.localeCompare(b.date)),
@@ -121,11 +125,55 @@ export default function AdminAttendance() {
 
   const halfCount = dayAttended.filter((s) => s.attendance === 'am' || s.attendance === 'pm').length;
 
+  // --- 月次の勤怠表出力 (出勤記録のみ。給与は含まない) ---
+  // 出力対象の月は「いま選んでいる日付が属する月」。日付タブを切り替えれば対象月も変わる。
+  const months = useMemo(
+    () => getMonthRanges(settings.seasonStart, settings.seasonEnd),
+    [settings.seasonStart, settings.seasonEnd],
+  );
+  const currentMonth = useMemo(() => {
+    if (months.length === 0) return null;
+    if (!selectedDate) return months[0];
+    return months.find((m) => selectedDate >= m.startDate && selectedDate <= m.endDate) ?? months[0];
+  }, [months, selectedDate]);
+
+  const monthAttendedCount = useMemo(() => {
+    if (!currentMonth) return 0;
+    return shifts.filter(
+      (s) => s.status === 'attended' && s.date >= currentMonth.startDate && s.date <= currentMonth.endDate,
+    ).length;
+  }, [shifts, currentMonth]);
+
+  function handleExportMonth() {
+    if (!currentMonth || monthAttendedCount === 0) return;
+    const monthKey = `${currentMonth.year}-${String(currentMonth.month + 1).padStart(2, '0')}`;
+    exportAttendanceOnlyXlsx(students, shifts, days, monthKey, currentMonth.startDate, currentMonth.endDate);
+  }
+
   return (
     <div className="p-4 sm:p-6">
-      <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1 sm:mb-2">勤怠入力</h1>
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-1 sm:mb-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">勤怠入力</h1>
+        {currentMonth && (
+          <button
+            onClick={handleExportMonth}
+            disabled={monthAttendedCount === 0}
+            title="出勤記録だけの勤怠表をExcelで出力します(給与は含みません)"
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              monthAttendedCount > 0
+                ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            <Download size={16} />
+            {currentMonth.month + 1}月の勤怠表
+          </button>
+        )}
+      </div>
       <p className="text-xs text-gray-400 mb-4 sm:mb-6">
-        日付を選んで、その日に出勤した人を追加します。給与配分(1日/V日)は月末に「給与配分」ページで設定します。
+        日付を選んで、その日に出勤した人を追加します。給与配分(1日/V日)は月末に「給与配分」ページで設定します。<br />
+        「◯月の勤怠表」は、選んでいる日付の月の<strong>出勤記録だけ</strong>をExcelで出力します(給与なし)。
+        給与込みの勤怠表は「給与配分」ページから出力してください。
       </p>
 
       {/* モバイル: 横スクロール日付タブ */}
