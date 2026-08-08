@@ -137,7 +137,28 @@ export function exportAttendanceReport(
   const totalPay = payRows.reduce((acc, r) => acc + (r[6] as number), 0);
   payRows.push(['', '', '合計', totalFullPay, totalVPay, totalFullPay + totalVPay, totalPay]);
 
-  const ws2 = XLSX.utils.aoa_to_sheet([payHeaders, ...payRows]);
+  // 給与集計にも社会人セクション(区分固定)。学生の合計の下に2行空けて追加する。
+  // 社会人は1日数/V日数の概念がないため空欄。合計日数=出勤回数、給与=adultShiftPay。
+  const adultPayRows = adultList.map((adult) => {
+    const attended = filteredShifts.filter(
+      (s) => s.studentId === adult.id && s.status === 'attended'
+    );
+    let pay = 0;
+    for (const s of attended) {
+      pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+    }
+    const label = adult.adultPayType === 'none' ? '無給' : adult.adultPayType === '1' ? '1単価' : 'V単価';
+    return ['社会人', label, adult.name, '', '', attended.length, pay];
+  });
+  const payBlank = payHeaders.map(() => '');
+  const paySheetData: (string | number)[][] = [payHeaders, ...payRows];
+  if (adultPayRows.length > 0) {
+    const adultTotal = adultPayRows.reduce((acc, r) => acc + (r[6] as number), 0);
+    adultPayRows.push(['', '', '社会人 合計', '', '', '', adultTotal]);
+    paySheetData.push(payBlank, payBlank, ...adultPayRows);
+  }
+
+  const ws2 = XLSX.utils.aoa_to_sheet(paySheetData);
   ws2['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, ws2, '給与集計');
 
