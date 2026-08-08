@@ -82,12 +82,15 @@ export function exportAttendanceReport(
   // 社会人の行(全学生の下に2行空けて追加)。給与は区分固定(adultShiftPay)。
   // V単価は半日でも全額、1単価は半日半額、無給は0。1日数/V日数列は社会人には該当しないので空。
   const adultSummaryRows = adultList.map((adult) => {
+    // 社会人も学生と同じく給与区分の文字でセル表示する(○ではなく 1 / V。無給は「無」)。
+    const mark = adult.adultPayType === 'none' ? '無' : adult.adultPayType === '1' ? '1' : 'V';
     const cells = allDates.map((date) => {
       const shift = filteredShifts.find(
         (s) => s.studentId === adult.id && s.date === date && s.status === 'attended'
       );
       if (!shift) return '-';
-      return shift.attendance === 'am' ? '午前' : shift.attendance === 'pm' ? '午後' : '○';
+      const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
+      return mark + half;
     });
     const attended = filteredShifts.filter((s) => s.studentId === adult.id && s.status === 'attended');
     let pay = 0;
