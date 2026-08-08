@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { ShiftAssignment, Student, AppSettings, SeasonDay } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
+import { shiftPay } from '@/utils/pay';
 
 export function exportAttendanceReport(
   students: Student[],
@@ -59,26 +60,22 @@ export function exportAttendanceReport(
       return (shift.payType ?? '○') + half;
     });
 
-    // Pay = attended only (half-day = half pay) — 未配分は 0 円扱い
+    // 給与は出勤(attended)分のみ。1日数/V日数は「枠が付いた回数」(整数)、給与は shiftPay で算出。
+    // アプリ(給与配分ページ)と同じ pay モジュールを通すので金額が食い違わない。
     const attended = filteredShifts.filter(
       (s) => s.studentId === student.id && s.status === 'attended'
     );
     let totalPay = 0;
-    let attendedFullPay = 0;
-    let attendedVPay = 0;
+    let fullCount = 0;
+    let vCount = 0;
     for (const s of attended) {
-      const multiplier = (s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1;
-      if (s.payType === '1') {
-        attendedFullPay += multiplier;
-        totalPay += settings.fullPayAmount * multiplier;
-      } else if (s.payType === 'V') {
-        attendedVPay += multiplier;
-        totalPay += settings.vPayAmount * multiplier;
-      }
-      // payType undefined は集計対象外 (給与配分前の状態)
+      if (s.payType === '1') fullCount += 1;
+      else if (s.payType === 'V') vCount += 1;
+      totalPay += shiftPay(s.payType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      // payType undefined(配分前)は shiftPay が0を返す
     }
 
-    return [student.grade, student.role, student.name, ...cells, attendedFullPay + attendedVPay, attendedFullPay, attendedVPay, totalPay];
+    return [student.grade, student.role, student.name, ...cells, fullCount + vCount, fullCount, vCount, totalPay];
   });
 
   const sheetName = monthLabel ? `勤怠表_${monthLabel}` : '勤怠表';
@@ -102,14 +99,13 @@ export function exportAttendanceReport(
     const attended = filteredShifts.filter(
       (s) => s.studentId === student.id && s.status === 'attended'
     );
-    let pFullPay = 0, pVPay = 0, pTotalPay = 0;
+    let pFull = 0, pV = 0, pTotalPay = 0;
     for (const s of attended) {
-      const mult = (s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1;
-      if (s.payType === '1') { pFullPay += mult; pTotalPay += settings.fullPayAmount * mult; }
-      else if (s.payType === 'V') { pVPay += mult; pTotalPay += settings.vPayAmount * mult; }
-      // 未配分(payType undefined)は給与計算の対象外
+      if (s.payType === '1') pFull += 1;
+      else if (s.payType === 'V') pV += 1;
+      pTotalPay += shiftPay(s.payType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
     }
-    return [student.grade, student.role, student.name, pFullPay, pVPay, pFullPay + pVPay, pTotalPay];
+    return [student.grade, student.role, student.name, pFull, pV, pFull + pV, pTotalPay];
   });
 
   const totalFullPay = payRows.reduce((acc, r) => acc + (r[3] as number), 0);

@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { Check, Undo2, Download } from 'lucide-react';
 import { exportAttendanceReport } from '@/utils/export';
 import { getMonthRanges } from '@/utils/monthRanges';
+import { shiftPay, assignPayTypes } from '@/utils/pay';
 
 /** 鶴亀算: 予算と延べ人日から1枠・V枠を計算 */
 function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPay: number, minimizeSurplus = false) {
@@ -227,15 +228,30 @@ export default function AdminPayAllocation() {
     const studentAllocations = activeStudents
       .filter((s) => studentDaysMap.has(s.id))
       .map((s) => {
-        const totalDays = studentDaysMap.get(s.id) ?? 0;
-        const forcedVDays = rookieForcedVByStudent.get(s.id)?.effectiveDays ?? 0;
-        const fullDays = fullDaysMap.get(s.id) ?? 0;
-        const vDays = totalDays - fullDays;
-        const pay = fullDays * settings.fullPayAmount + vDays * settings.vPayAmount;
-        const ratio = totalDays > 0 ? fullDays / totalDays : 0;
-        return { student: s, totalDays, fullDays, vDays, forcedVDays, pay, ratio };
+        const totalDays = studentDaysMap.get(s.id) ?? 0; // 人日(半日0.5)。予算・繰越計算のため保持
+        const fullDaysTarget = fullDaysMap.get(s.id) ?? 0; // 1枠の人日(0.5刻み・内部用)
+        // プレビュー段階でも「確定したらどうなるか」を確定と同一ロジック(assignPayTypes)で計算する。
+        // これにより画面表示・確定・Excelの金額が構造的に一致する。
+        const myShifts = attendedShifts
+          .filter((sh) => sh.studentId === s.id)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const payMap = new Map(
+          assignPayTypes(myShifts, fullDaysTarget, forcedVShiftIds).map((a) => [a.id, a.payType]),
+        );
+        let fullCount = 0;
+        let vCount = 0;
+        let pay = 0;
+        for (const sh of myShifts) {
+          const pt = payMap.get(sh.id);
+          if (pt === '1') fullCount += 1;
+          else vCount += 1;
+          pay += shiftPay(pt, sh.attendance, settings.fullPayAmount, settings.vPayAmount);
+        }
+        const totalCount = myShifts.length; // 出勤回数(整数)
+        const ratio = totalCount > 0 ? fullCount / totalCount : 0;
+        return { student: s, totalDays, totalCount, fullDaysTarget, fullCount, vCount, pay, ratio };
       })
-      .sort((a, b) => b.totalDays - a.totalDays);
+      .sort((a, b) => b.totalCount - a.totalCount);
 
     // 合計補正後（表示用の合計枠数）
     const totalFullSlots = calc.fullSlots;
@@ -273,24 +289,13 @@ export default function AdminPayAllocation() {
       const studentShifts = monthData.attendedShifts
         .filter((s) => s.studentId === alloc.student.id)
         .sort((a, b) => a.date.localeCompare(b.date));
-
-      // fullRemaining は半日単位で管理(×2 整数化)。半日シフトは -1、終日シフトは -2 消費。
-      // 配分された fullDays が 0.5 刻みでも破綻しないようにするため。
-      let fullRemainingHalf = Math.round(alloc.fullDays * 2);
-      for (const shift of studentShifts) {
-        // 1年生の最初3回の勤務は強制V
-        if (monthData.forcedVShiftIds.has(shift.id)) {
-          updates.push({ id: shift.id, payType: 'V' });
-          continue;
-        }
-        const costHalf = (shift.attendance === 'am' || shift.attendance === 'pm') ? 1 : 2;
-        if (fullRemainingHalf >= costHalf) {
-          updates.push({ id: shift.id, payType: '1' });
-          fullRemainingHalf -= costHalf;
-        } else {
-          updates.push({ id: shift.id, payType: 'V' });
-        }
-      }
+      // プレビュー(studentAllocations)と同一の assignPayTypes を使い、表示と確定を完全一致させる
+      const assign = assignPayTypes(
+        studentShifts,
+        monthData.fullDaysMap.get(alloc.student.id) ?? 0,
+        monthData.forcedVShiftIds,
+      );
+      for (const a of assign) updates.push({ id: a.id, payType: a.payType });
     }
     try {
       await setShiftPayTypesBulk(updates);
@@ -501,14 +506,14 @@ export default function AdminPayAllocation() {
                   {alloc.student.name}
                 </td>
                 <td className="px-4 py-3 text-center text-xs text-gray-500">{alloc.student.grade}</td>
-                <td className="px-4 py-3 text-center font-semibold text-gray-700">{alloc.totalDays}</td>
+                <td className="px-4 py-3 text-center font-semibold text-gray-700">{alloc.totalCount}</td>
                 {monthData.hasAllocation && (
                   <>
                     <td className="px-4 py-3 text-center">
-                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">{alloc.fullDays}</span>
+                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">{alloc.fullCount}</span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full text-xs font-bold">{alloc.vDays}</span>
+                      <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full text-xs font-bold">{alloc.vCount}</span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center gap-1">
