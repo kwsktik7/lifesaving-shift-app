@@ -10,6 +10,14 @@ import type { AttendanceType } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
 import { getMonthRanges } from '@/utils/monthRanges';
 import { exportAttendanceOnlyXlsx } from '@/utils/export';
+import type { AdultPayType } from '@/types';
+
+/** 社会人の給与区分ラベル。候補・出勤者リストで社会人を区別表示する。 */
+function adultBadge(pt: AdultPayType | undefined): string {
+  if (pt === 'none') return '社会人・無給';
+  if (pt === '1') return '社会人・1';
+  return '社会人・V';
+}
 
 /**
  * 勤怠入力ページ (シンプル運用版・スマホ対応)。
@@ -375,7 +383,7 @@ export default function AdminAttendance() {
                             {s.name}
                           </span>
                           <span className="text-xs text-gray-400 flex-shrink-0">
-                            {s.grade}{s.role ? `/${s.role}` : ''}
+                            {s.isAdult ? adultBadge(s.adultPayType) : `${s.grade}${s.role ? `/${s.role}` : ''}`}
                           </span>
                         </label>
                       );
@@ -435,7 +443,7 @@ export default function AdminAttendance() {
                               {student?.name ?? '(不明な学生)'}
                             </p>
                             <span className="text-xs text-gray-400">
-                              {student?.grade}{student?.role ? ` / ${student.role}` : ''}
+                              {student?.isAdult ? adultBadge(student.adultPayType) : `${student?.grade}${student?.role ? ` / ${student.role}` : ''}`}
                             </span>
                           </div>
                           {/* PC のみ右側に勤務区分+削除を並べる */}

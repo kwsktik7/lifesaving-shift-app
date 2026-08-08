@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { Check, Undo2, Download } from 'lucide-react';
 import { exportAttendanceReport } from '@/utils/export';
 import { getMonthRanges } from '@/utils/monthRanges';
-import { shiftPay, assignPayTypes } from '@/utils/pay';
+import { shiftPay, assignPayTypes, adultShiftPay } from '@/utils/pay';
 
 /** 鶴亀算: 予算と延べ人日から1枠・V枠を計算 */
 function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPay: number, minimizeSurplus = false) {
@@ -90,16 +90,40 @@ export default function AdminPayAllocation() {
   const [errorMsg, setErrorMsg] = useState('');
   const month = months[selectedMonth];
 
-  const activeStudents = students.filter((s) => s.isActive);
+  // 学生(鶴亀算の配分対象) と 社会人(区分固定・予算から先取り控除) を分離する
+  const activeStudents = students.filter((s) => s.isActive && !s.isAdult);
+  const adultStudents = students.filter((s) => s.isActive && s.isAdult);
+  const studentIdSet = new Set(activeStudents.map((s) => s.id));
 
   function handleExport() {
     if (!month) return;
-    exportAttendanceReport(activeStudents, shifts, settings, days, month.label, month.startDate, month.endDate);
+    // Excel(勤怠表)には社会人も含める。全 active(学生+社会人)を渡す。
+    const allActive = students.filter((s) => s.isActive);
+    exportAttendanceReport(allActive, shifts, settings, days, month.label, month.startDate, month.endDate);
   }
 
   /** 半日を0.5で数えた延べ人日を計算 */
   function calcEffectiveDays(shiftList: typeof shifts) {
     return shiftList.reduce((acc, s) => acc + ((s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1), 0);
+  }
+
+  /**
+   * 指定月の社会人給与を区分固定(adultShiftPay)で計算する。鶴亀算とは独立。
+   * 社会人給与の合計は学生の月予算から先に差し引かれる。
+   */
+  function calcAdultPayForMonth(monthStart: string, monthEnd: string) {
+    const perAdult = adultStudents.map((a) => {
+      const myShifts = shifts.filter(
+        (s) => s.studentId === a.id && s.status === 'attended' && s.date >= monthStart && s.date <= monthEnd,
+      );
+      let pay = 0;
+      for (const s of myShifts) {
+        pay += adultShiftPay(a.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      }
+      return { student: a, count: myShifts.length, pay };
+    });
+    const total = perAdult.reduce((acc, x) => acc + x.pay, 0);
+    return { perAdult, total };
   }
 
   /**
@@ -143,10 +167,14 @@ export default function AdminPayAllocation() {
       const carryover = i > 0 ? (surplusMap.get(i - 1) ?? 0) : 0;
       const totalBudget = baseBudget + carryover;
 
+      // 鶴亀算の人日は学生のみ(社会人は配分対象外)
       const attended = shifts.filter(
-        (s) => s.date >= m.startDate && s.date <= m.endDate && s.status === 'attended'
+        (s) => s.date >= m.startDate && s.date <= m.endDate && s.status === 'attended' && studentIdSet.has(s.studentId)
       );
       const personDays = calcEffectiveDays(attended);
+
+      // 社会人給与は予算から先に控除
+      const adultPayTotal = calcAdultPayForMonth(m.startDate, m.endDate).total;
 
       // 1年生の強制V分を控除
       let forcedVEffectiveDays = 0;
@@ -155,7 +183,7 @@ export default function AdminPayAllocation() {
         forcedVEffectiveDays += calcRookieForcedV(st.id, m.startDate, m.endDate).effectiveDays;
       }
       const eligibleDays = personDays - forcedVEffectiveDays;
-      const eligibleBudget = totalBudget - forcedVEffectiveDays * settings.vPayAmount;
+      const eligibleBudget = totalBudget - adultPayTotal - forcedVEffectiveDays * settings.vPayAmount;
 
       const isLastMonth = i === months.length - 1;
       const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
@@ -173,23 +201,28 @@ export default function AdminPayAllocation() {
     const carryover = selectedMonth > 0 ? (allMonthSurplus.get(selectedMonth - 1) ?? 0) : 0;
     const budget = baseBudget + carryover;
 
-    // 出勤確定シフトのみ
+    // 出勤確定シフト。全員(Excel/勤怠表示用)と、鶴亀算に使う学生のみ を分ける。
     const attendedShifts = shifts.filter(
       (s) => s.date >= month.startDate && s.date <= month.endDate && s.status === 'attended'
     );
-    const totalPersonDays = calcEffectiveDays(attendedShifts);
+    const studentAttendedShifts = attendedShifts.filter((s) => studentIdSet.has(s.studentId));
+    const totalPersonDays = calcEffectiveDays(studentAttendedShifts);
+
+    // 社会人給与(区分固定)。予算から先取り控除する。
+    const adult = calcAdultPayForMonth(month.startDate, month.endDate);
+    const adultPayTotal = adult.total;
 
     // 勤怠未入力シフト
     const pendingShifts = shifts.filter(
       (s) => s.date >= month.startDate && s.date <= month.endDate && s.status === 'published'
     ).length;
 
-    // 半日勤務を考慮した延べ人日（0.5換算）
-    const effectivePersonDays = calcEffectiveDays(attendedShifts);
+    // 半日勤務を考慮した延べ人日（0.5換算・学生のみ）
+    const effectivePersonDays = calcEffectiveDays(studentAttendedShifts);
 
-    // 学生ごとの出勤日数（半日は0.5）
+    // 学生ごとの出勤日数（半日は0.5・学生のみ）
     const studentDaysMap = new Map<string, number>();
-    for (const s of attendedShifts) {
+    for (const s of studentAttendedShifts) {
       const val = (s.attendance === 'am' || s.attendance === 'pm') ? 0.5 : 1;
       studentDaysMap.set(s.studentId, (studentDaysMap.get(s.studentId) ?? 0) + val);
     }
@@ -208,9 +241,9 @@ export default function AdminPayAllocation() {
       }
     }
 
-    // 配分対象の延べ人日と予算（強制Vを除外）
+    // 配分対象の延べ人日と予算（社会人給与と強制Vを予算から先に控除）
     const eligibleDays = effectivePersonDays - totalRookieForcedVDays;
-    const eligibleBudget = budget - totalRookieForcedVDays * settings.vPayAmount;
+    const eligibleBudget = budget - adultPayTotal - totalRookieForcedVDays * settings.vPayAmount;
     const isLastMonth = selectedMonth === months.length - 1;
     const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
 
@@ -278,6 +311,8 @@ export default function AdminPayAllocation() {
       rookieForcedVByStudent,
       totalRookieForcedVDays,
       hasAllocation,
+      adultAllocations: adult.perAdult, // 社会人の個人別(区分固定)給与
+      adultPayTotal,                    // 社会人給与合計(予算から控除済み)
     };
   }, [month, days, shifts, students, settings, activeStudents, selectedMonth, allMonthSurplus]);
 
@@ -314,7 +349,10 @@ export default function AdminPayAllocation() {
   async function handleReset() {
     if (!monthData || !month) return;
     const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
-    const updates = monthData.attendedShifts.map((s) => ({ id: s.id, payType: 'V' as const }));
+    // リセットは学生シフトのみ(社会人は payType を使わず区分固定で計算するため触らない)
+    const updates = monthData.attendedShifts
+      .filter((s) => studentIdSet.has(s.studentId))
+      .map((s) => ({ id: s.id, payType: 'V' as const }));
     try {
       await setShiftPayTypesBulk(updates);
       const current = settings.allocatedMonths ?? [];
@@ -371,6 +409,11 @@ export default function AdminPayAllocation() {
           {monthData.carryover > 0 && (
             <p className="text-xs text-blue-600 mt-1">
               (基本 ¥{monthData.baseBudget.toLocaleString()} + 繰越 ¥{monthData.carryover.toLocaleString()})
+            </p>
+          )}
+          {monthData.adultPayTotal > 0 && (
+            <p className="text-xs text-orange-600 mt-1">
+              うち社会人給与 ¥{monthData.adultPayTotal.toLocaleString()} を先に控除
             </p>
           )}
         </div>
@@ -558,6 +601,45 @@ export default function AdminPayAllocation() {
           )}
         </table>
       </div>
+
+      {/* 社会人セクション(区分固定・予算から先取り控除) */}
+      {monthData.adultAllocations.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-6">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700">社会人（給与区分は固定・月予算から先に控除）</h2>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">氏名</th>
+                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">区分</th>
+                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">出勤回数</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">給与</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {monthData.adultAllocations.map((a) => {
+                const label =
+                  a.student.adultPayType === 'none' ? '無給' : a.student.adultPayType === '1' ? '1単価' : 'V単価';
+                return (
+                  <tr key={a.student.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-800">{a.student.name}</td>
+                    <td className="px-4 py-3 text-center text-xs text-gray-500">{label}</td>
+                    <td className="px-4 py-3 text-center font-semibold text-gray-700">{a.count}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-800">¥{a.pay.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-gray-50 font-semibold">
+                <td className="px-4 py-3 text-gray-700" colSpan={3}>社会人 合計</td>
+                <td className="px-4 py-3 text-right text-gray-800">¥{monthData.adultPayTotal.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,13 @@ export interface Student {
   /** PIN の plaintext (管理者が表示するため)。学生がPINを設定した際に同時更新される */
   birthday?: string;
   bankAccount?: string;
+  /**
+   * 社会人メンバー。true の場合、ログイン・シフト希望提出・シフト作成・可否一覧・シフト表には出さず、
+   * 勤怠入力・給与配分・勤怠表Excel にのみ登場する。学生は undefined/false。
+   */
+  isAdult?: boolean;
+  /** 社会人の給与区分。isAdult=true のときのみ意味を持つ。 */
+  adultPayType?: AdultPayType;
 }
 
 export interface SeasonDay {
@@ -38,6 +45,11 @@ export interface Availability {
 }
 
 export type PayType = '1' | 'V';
+/**
+ * 社会人メンバーの給与区分。
+ * 'none' = 無給(ボランティア・0円) / 'V' = V単価のみ(半日でも全額) / '1' = 学生と同じ(半日は半額)
+ */
+export type AdultPayType = 'none' | 'V' | '1';
 export type ShiftStatus = 'draft' | 'published' | 'attended' | 'absent' | 'cancelled';
 export type AttendanceType = 'full' | 'am' | 'pm';
 

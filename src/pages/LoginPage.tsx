@@ -17,7 +17,7 @@ export default function LoginPage() {
   const { settings, _ready: settingsReady, verifyAdminPassword, setAdminPassword } = useSettingsStore();
   const navigate = useNavigate();
 
-  const activeStudents = useMemo(() => sortStudents(students.filter((s) => s.isActive)), [students]);
+  const activeStudents = useMemo(() => sortStudents(students.filter((s) => s.isActive && !s.isAdult)), [students]);
 
   // 選択中の学生。PIN未設定 (pinHash が空) の場合は初回PIN設定モードに切り替える。
   const me = useMemo(

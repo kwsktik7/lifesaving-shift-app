@@ -65,6 +65,11 @@ export default function AdminSettings() {
   const [newStudentHasPwc, setNewStudentHasPwc] = useState(false);
   const [addingStudent, setAddingStudent] = useState(false);
 
+  // 社会人追加フォーム
+  const [newAdultName, setNewAdultName] = useState('');
+  const [newAdultPayType, setNewAdultPayType] = useState<'none' | 'V' | '1'>('V');
+  const [addingAdult, setAddingAdult] = useState(false);
+
   // 学生の編集中ステート
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -146,6 +151,46 @@ export default function AdminSettings() {
       setErrorMsg(`追加に失敗しました: ${msg}`);
     } finally {
       setAddingStudent(false);
+    }
+  }
+
+  async function handleAddAdult() {
+    const name = newAdultName.trim();
+    if (!name) {
+      setErrorMsg('氏名を入力してください');
+      return;
+    }
+    if (students.some((s) => s.name === name && s.isActive)) {
+      setErrorMsg(`「${name}」は既に登録されています`);
+      return;
+    }
+    setAddingAdult(true);
+    try {
+      // 社会人はログイン/シフト提出をしないので PIN もPWC/役職も持たない。
+      // 勤怠・給与にのみ登場し、給与は adultPayType で固定計算する。
+      await addStudent({
+        name,
+        nameKana: '',
+        isActive: true,
+        joinYear: new Date().getFullYear(),
+        grade: '社会人',
+        role: '',
+        hasPwc: false,
+        isLeader: false,
+        isAdult: true,
+        adultPayType: newAdultPayType,
+      });
+      setNewAdultName('');
+      setNewAdultPayType('V');
+      setErrorMsg('');
+      const label = newAdultPayType === 'none' ? '無給' : newAdultPayType === 'V' ? 'V単価' : '1単価';
+      setSuccessMsg(`社会人「${name}」(${label})を追加しました。`);
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(`追加に失敗しました: ${msg}`);
+    } finally {
+      setAddingAdult(false);
     }
   }
 
@@ -540,12 +585,12 @@ export default function AdminSettings() {
           </p>
         </div>
 
-        {/* Student list */}
+        {/* Student list (社会人は下の「社会人管理」に分けて表示) */}
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-          {students.length === 0 ? (
+          {students.filter((s) => !s.isAdult).length === 0 ? (
             <p className="px-4 py-6 text-center text-gray-400 text-sm">学生が登録されていません</p>
           ) : (
-            sortStudents(students)
+            sortStudents(students.filter((s) => !s.isAdult))
               .map((student) => {
                 const isEditing = editingStudentId === student.id;
                 const submitted = (submitCountByStudent.get(student.id) ?? 0) > 0;
@@ -659,6 +704,102 @@ export default function AdminSettings() {
                       </button>
                       <button
                         onClick={() => openDeleteModal(student.id, student.name)}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                        title="削除"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+          )}
+        </div>
+      </section>
+
+      {/* 社会人管理 */}
+      <section>
+        <h2 className="text-base font-semibold text-gray-700 mb-4">社会人管理</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          学生の人数が足りずシフト要請した社会人を登録します。社会人は勤怠入力・給与配分にのみ登場し、
+          ログインやシフト提出には出ません。給与区分（無給／V単価のみ／1単価も可）は社会人ごとに固定です。
+        </p>
+
+        {/* Add adult form */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3 space-y-3">
+          <input
+            type="text"
+            placeholder="氏名"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={newAdultName}
+            onChange={(e) => setNewAdultName(e.target.value)}
+          />
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">給与区分</span>
+              <select
+                className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"
+                value={newAdultPayType}
+                onChange={(e) => setNewAdultPayType(e.target.value as 'none' | 'V' | '1')}
+              >
+                <option value="none">無給（0円）</option>
+                <option value="V">V単価のみ（¥{settings.vPayAmount.toLocaleString()}/日）</option>
+                <option value="1">1単価も可（¥{settings.fullPayAmount.toLocaleString()}/日）</option>
+              </select>
+            </div>
+            <button
+              onClick={handleAddAdult}
+              disabled={addingAdult || !newAdultName.trim()}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !addingAdult && newAdultName.trim()
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {addingAdult ? '追加中...' : '社会人を追加'}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 leading-relaxed">
+            V単価の社会人は午前のみ／午後のみでもV単価まるまる支給されます。1単価の社会人は学生と同じく半日は半額です。
+            社会人の給与は月予算から先に差し引かれます。
+          </p>
+        </div>
+
+        {/* Adult list */}
+        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+          {students.filter((s) => s.isAdult).length === 0 ? (
+            <p className="px-4 py-6 text-center text-gray-400 text-sm">社会人が登録されていません</p>
+          ) : (
+            students
+              .filter((s) => s.isAdult)
+              .map((adult) => {
+                const label =
+                  adult.adultPayType === 'none' ? '無給' : adult.adultPayType === '1' ? '1単価' : 'V単価';
+                const labelCls =
+                  adult.adultPayType === 'none'
+                    ? 'bg-gray-100 text-gray-600'
+                    : adult.adultPayType === '1'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-orange-100 text-orange-700';
+                return (
+                  <div key={adult.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{adult.name}</p>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${labelCls}`}>{label}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={adult.adultPayType ?? 'V'}
+                        onChange={(e) => updateStudent(adult.id, { adultPayType: e.target.value as 'none' | 'V' | '1' })}
+                        className="border border-gray-300 rounded-md px-2 py-1 text-xs bg-white"
+                        title="給与区分を変更"
+                      >
+                        <option value="none">無給</option>
+                        <option value="V">V単価</option>
+                        <option value="1">1単価</option>
+                      </select>
+                      <button
+                        onClick={() => openDeleteModal(adult.id, adult.name)}
                         className="text-red-400 hover:text-red-600 transition-colors"
                         title="削除"
                       >

@@ -3,7 +3,7 @@ import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import type { ShiftAssignment, Student, AppSettings, SeasonDay } from '@/types';
 import { sortStudents } from '@/utils/studentSort';
-import { shiftPay } from '@/utils/pay';
+import { shiftPay, adultShiftPay } from '@/utils/pay';
 
 export function exportAttendanceReport(
   students: Student[],
@@ -44,8 +44,9 @@ export function exportAttendanceReport(
     '給与合計(円)',
   ];
 
-  // 表示順: 監視長→副監視長→3年→4年→2年→1年→その他
-  const orderedStudents = sortStudents(students.filter((s) => s.isActive));
+  // 表示順: 監視長→副監視長→3年→4年→2年→1年→その他 (学生のみ。社会人は下に別セクション)
+  const orderedStudents = sortStudents(students.filter((s) => s.isActive && !s.isAdult));
+  const adultList = students.filter((s) => s.isActive && s.isAdult);
   const summaryRows = orderedStudents.map((student) => {
     const cells = allDates.map((date) => {
       // 勤怠表(実績表)は「実際に出勤した(status=attended)」シフトだけを反映する。
@@ -78,8 +79,31 @@ export function exportAttendanceReport(
     return [student.grade, student.role, student.name, ...cells, fullCount + vCount, fullCount, vCount, totalPay];
   });
 
+  // 社会人の行(全学生の下に2行空けて追加)。給与は区分固定(adultShiftPay)。
+  // V単価は半日でも全額、1単価は半日半額、無給は0。1日数/V日数列は社会人には該当しないので空。
+  const adultSummaryRows = adultList.map((adult) => {
+    const cells = allDates.map((date) => {
+      const shift = filteredShifts.find(
+        (s) => s.studentId === adult.id && s.date === date && s.status === 'attended'
+      );
+      if (!shift) return '-';
+      return shift.attendance === 'am' ? '午前' : shift.attendance === 'pm' ? '午後' : '○';
+    });
+    const attended = filteredShifts.filter((s) => s.studentId === adult.id && s.status === 'attended');
+    let pay = 0;
+    for (const s of attended) {
+      pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+    }
+    const label = adult.adultPayType === 'none' ? '無給' : adult.adultPayType === '1' ? '1単価' : 'V単価';
+    return ['社会人', label, adult.name, ...cells, attended.length, '', '', pay];
+  });
+
   const sheetName = monthLabel ? `勤怠表_${monthLabel}` : '勤怠表';
-  const ws = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
+  const blankRow = summaryHeaders.map(() => '');
+  const attendanceSheetData = adultSummaryRows.length > 0
+    ? [summaryHeaders, ...summaryRows, blankRow, blankRow, ...adultSummaryRows]
+    : [summaryHeaders, ...summaryRows];
+  const ws = XLSX.utils.aoa_to_sheet(attendanceSheetData);
   ws['!cols'] = [
     { wch: 6 },   // 学年
     { wch: 14 },  // 役職

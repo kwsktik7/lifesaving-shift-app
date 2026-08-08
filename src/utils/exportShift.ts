@@ -26,7 +26,7 @@ export function exportShiftScheduleXlsx(
     : allOpenDays;
   if (openDays.length === 0) return;
 
-  const activeStudents = sortStudents(students.filter((s) => s.isActive));
+  const activeStudents = sortStudents(students.filter((s) => s.isActive && !s.isAdult));
 
   // Header rows: 学年 / 役職 / 氏名 / 日付... / 合計
   const header1 = ['学年', '役職', '氏名', ...openDays.map((d) => format(parseISO(d.date), 'M/d')), '合計'];
@@ -99,7 +99,7 @@ export function exportShiftSchedulePdf(
   const openDays = seasonDays.filter((d) => d.isOpen).sort((a, b) => a.date.localeCompare(b.date));
   if (openDays.length === 0) return;
 
-  const activeStudents = students.filter((s) => s.isActive);
+  const activeStudents = students.filter((s) => s.isActive && !s.isAdult);
 
   // Build HTML table
   const dateHeaders = openDays.map((d) => {

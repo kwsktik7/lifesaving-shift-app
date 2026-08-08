@@ -37,7 +37,7 @@ export default function AdminDashboard() {
   const { availabilities } = useAvailabilityStore();
 
   const stats = useMemo(() => {
-    const activeStudents = students.filter((s) => s.isActive).length;
+    const activeStudents = students.filter((s) => s.isActive && !s.isAdult).length;
     const publishedShifts = shifts.filter((s) => s.status === 'published' || s.status === 'attended').length;
     const summaries = getSummaries();
     const totalPay = summaries.reduce((acc, s) => acc + s.totalPay, 0);
@@ -56,7 +56,7 @@ export default function AdminDashboard() {
 
     // Students who haven't submitted availability
     const studentsWithAvailability = new Set(availabilities.map((a) => a.studentId));
-    const noSubmitCount = students.filter((s) => s.isActive && !studentsWithAvailability.has(s.id)).length;
+    const noSubmitCount = students.filter((s) => s.isActive && !s.isAdult && !studentsWithAvailability.has(s.id)).length;
 
     return { activeStudents, publishedShifts, totalPay, totalBudget, unpublishedOpenDays, noSubmitCount };
   }, [shifts, students, days, settings, availabilities, getSummaries]);

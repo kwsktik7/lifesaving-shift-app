@@ -78,7 +78,7 @@ export default function AdminAvailability() {
   }
 
   // 名簿順(order優先)で並べる。日別ビュー・学生別ビュー両方に反映される。
-  const activeStudents = sortStudents(students.filter((s) => s.isActive));
+  const activeStudents = sortStudents(students.filter((s) => s.isActive && !s.isAdult));
 
   // availMap: date → studentId → Availability
   const availMap = useMemo(() => {

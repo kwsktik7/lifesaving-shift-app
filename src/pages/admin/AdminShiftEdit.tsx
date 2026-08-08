@@ -21,7 +21,7 @@ export default function AdminShiftEdit() {
 
   // 監視長→副監視長→3年→4年→2年→1年→その他 の順で統一
   const activeStudents = useMemo(
-    () => sortStudents(students.filter((s) => s.isActive)),
+    () => sortStudents(students.filter((s) => s.isActive && !s.isAdult)),
     [students]
   );
 
@@ -85,7 +85,7 @@ export default function AdminShiftEdit() {
         </p>
         <ShiftGrid
           days={days}
-          students={students}
+          students={students.filter((s) => !s.isAdult)}
           shifts={shifts}
           availabilities={availabilities}
           selectedDate={selectedDate}

@@ -288,7 +288,7 @@ export default function AdminShiftPublish() {
             </div>
             <ShiftGrid
               days={filteredDays}
-              students={students}
+              students={students.filter((s) => !s.isAdult)}
               shifts={filteredShifts}
               hidePayType
             />

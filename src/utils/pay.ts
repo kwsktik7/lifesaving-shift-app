@@ -1,4 +1,4 @@
-import type { AttendanceType, PayType, ShiftAssignment } from '@/types';
+import type { AttendanceType, PayType, AdultPayType, ShiftAssignment } from '@/types';
 
 /**
  * 給与計算の唯一のソース。
@@ -18,6 +18,27 @@ export function shiftPay(
   const base = payType === '1' ? fullPayAmount : vPayAmount;
   const mult = attendance === 'am' || attendance === 'pm' ? 0.5 : 1;
   return base * mult;
+}
+
+/**
+ * 社会人1シフトの給与。学生とはルールが違う:
+ *   - 'none' 無給: 常に0円
+ *   - 'V'    V単価のみ: 半日(午前/午後)でも V単価まるまる(半額にしない)
+ *   - '1'    1単価: 学生の1と同じく、半日は半額
+ * 社会人は鶴亀算の配分対象外で、区分は社会人ごとに固定。
+ */
+export function adultShiftPay(
+  adultPayType: AdultPayType | undefined,
+  attendance: AttendanceType,
+  fullPayAmount: number,
+  vPayAmount: number,
+): number {
+  if (adultPayType === 'V') return vPayAmount; // 半日でも全額
+  if (adultPayType === '1') {
+    const mult = attendance === 'am' || attendance === 'pm' ? 0.5 : 1;
+    return fullPayAmount * mult;
+  }
+  return 0; // 'none' / undefined
 }
 
 export interface PayTypeAssignment {

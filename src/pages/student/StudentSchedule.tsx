@@ -64,7 +64,7 @@ export default function StudentSchedule() {
         <div className="p-3 border-t border-gray-100 overflow-x-auto">
           <ShiftGrid
             days={days}
-            students={students}
+            students={students.filter((s) => !s.isAdult)}
             shifts={shifts.filter((s) => s.status === 'published' || s.status === 'attended' || s.status === 'absent')}
             hidePayType
             compact
