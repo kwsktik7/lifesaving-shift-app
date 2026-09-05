@@ -96,10 +96,14 @@ export default function AdminPayAllocation() {
   const studentIdSet = new Set(activeStudents.map((s) => s.id));
 
   function handleExport() {
-    if (!month) return;
+    if (!month || !monthData) return;
     // Excel(勤怠表)には社会人も含める。全 active(学生+社会人)を渡す。
+    // 配分未確定の月は 1/V を出さず出勤印「○」だけを出力する(monthData.hasAllocation)。
     const allActive = students.filter((s) => s.isActive);
-    exportAttendanceReport(allActive, shifts, settings, days, month.label, month.startDate, month.endDate);
+    exportAttendanceReport(
+      allActive, shifts, settings, days, month.label, month.startDate, month.endDate,
+      monthData.hasAllocation,
+    );
   }
 
   /** 半日を0.5で数えた延べ人日を計算 */

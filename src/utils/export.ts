@@ -12,7 +12,11 @@ export function exportAttendanceReport(
   seasonDays: SeasonDay[],
   monthLabel?: string,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  // 給与配分が確定済みの月か。未確定(false)の月は 1/V を出さず出勤印「○」だけを表示し、
+  // 給与も0にする。→ まだ配分していないのに保存済みの payType('V'等)が漏れて出るのを防ぐ。
+  // 「誰がいつ入ったか」だけを学生に確認させる用途。
+  isAllocated: boolean = true
 ): void {
   const wb = XLSX.utils.book_new();
 
@@ -57,12 +61,14 @@ export function exportAttendanceReport(
       );
       if (!shift) return '-';
       const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
-      // 給与配分前(payType undefined)は出勤印「○」、配分後は「1」/「V」を表示
-      return (shift.payType ?? '○') + half;
+      // 未確定の月は出勤印「○」、配分確定後のみ「1」/「V」を表示する。
+      const pt = isAllocated ? shift.payType : undefined;
+      return (pt ?? '○') + half;
     });
 
     // 給与は出勤(attended)分のみ。1日数/V日数は「枠が付いた回数」(整数)、給与は shiftPay で算出。
     // アプリ(給与配分ページ)と同じ pay モジュールを通すので金額が食い違わない。
+    // 未確定の月は payType を無視(undefined扱い)し、日数0・給与0とする。
     const attended = filteredShifts.filter(
       (s) => s.studentId === student.id && s.status === 'attended'
     );
@@ -70,10 +76,11 @@ export function exportAttendanceReport(
     let fullCount = 0;
     let vCount = 0;
     for (const s of attended) {
-      if (s.payType === '1') fullCount += 1;
-      else if (s.payType === 'V') vCount += 1;
-      totalPay += shiftPay(s.payType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
-      // payType undefined(配分前)は shiftPay が0を返す
+      const pt = isAllocated ? s.payType : undefined;
+      if (pt === '1') fullCount += 1;
+      else if (pt === 'V') vCount += 1;
+      totalPay += shiftPay(pt, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      // payType undefined(配分前 / 未確定)は shiftPay が0を返す
     }
 
     return [student.grade, student.role, student.name, ...cells, fullCount + vCount, fullCount, vCount, totalPay];
@@ -82,7 +89,8 @@ export function exportAttendanceReport(
   // 社会人の行(全学生の下に2行空けて追加)。給与は区分固定(adultShiftPay)。
   // V単価は半日でも全額、1単価は半日半額、無給は0。1日数/V日数列は社会人には該当しないので空。
   const adultSummaryRows = adultList.map((adult) => {
-    // 社会人も学生と同じく給与区分の文字でセル表示する(○ではなく 1 / V。無給は「無」)。
+    // 確定済みの月は給与区分の文字でセル表示(○ではなく 1 / V。無給は「無」)。
+    // 未確定の月は学生と同様に出勤印「○」だけを出し、給与も0にする。
     const mark = adult.adultPayType === 'none' ? '無' : adult.adultPayType === '1' ? '1' : 'V';
     const cells = allDates.map((date) => {
       const shift = filteredShifts.find(
@@ -90,12 +98,14 @@ export function exportAttendanceReport(
       );
       if (!shift) return '-';
       const half = shift.attendance === 'am' ? '(午前)' : shift.attendance === 'pm' ? '(午後)' : '';
-      return mark + half;
+      return (isAllocated ? mark : '○') + half;
     });
     const attended = filteredShifts.filter((s) => s.studentId === adult.id && s.status === 'attended');
     let pay = 0;
-    for (const s of attended) {
-      pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+    if (isAllocated) {
+      for (const s of attended) {
+        pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      }
     }
     const label = adult.adultPayType === 'none' ? '無給' : adult.adultPayType === '1' ? '1単価' : 'V単価';
     return ['社会人', label, adult.name, ...cells, attended.length, '', '', pay];
@@ -128,9 +138,10 @@ export function exportAttendanceReport(
     );
     let pFull = 0, pV = 0, pTotalPay = 0;
     for (const s of attended) {
-      if (s.payType === '1') pFull += 1;
-      else if (s.payType === 'V') pV += 1;
-      pTotalPay += shiftPay(s.payType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      const pt = isAllocated ? s.payType : undefined;
+      if (pt === '1') pFull += 1;
+      else if (pt === 'V') pV += 1;
+      pTotalPay += shiftPay(pt, s.attendance, settings.fullPayAmount, settings.vPayAmount);
     }
     return [student.grade, student.role, student.name, pFull, pV, pFull + pV, pTotalPay];
   });
@@ -147,8 +158,10 @@ export function exportAttendanceReport(
       (s) => s.studentId === adult.id && s.status === 'attended'
     );
     let pay = 0;
-    for (const s of attended) {
-      pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+    if (isAllocated) {
+      for (const s of attended) {
+        pay += adultShiftPay(adult.adultPayType, s.attendance, settings.fullPayAmount, settings.vPayAmount);
+      }
     }
     const label = adult.adultPayType === 'none' ? '無給' : adult.adultPayType === '1' ? '1単価' : 'V単価';
     return ['社会人', label, adult.name, '', '', attended.length, pay];
