@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { format, parseISO } from 'date-fns';
+import { ja } from 'date-fns/locale';
 import { useSeasonStore } from '@/store/seasonStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useShiftStore } from '@/store/shiftStore';
@@ -165,10 +167,23 @@ export default function AdminPayAllocation() {
     const adult = calcAdultPayForMonth(period.startDate, period.endDate);
     const adultPayTotal = adult.total;
 
-    // 勤怠未入力シフト
-    const pendingShifts = shifts.filter(
-      (s) => s.date >= period.startDate && s.date <= period.endDate && s.status === 'published'
-    ).length;
+    // 勤怠の入力漏れ検知: シフトは発行済み(published)なのに、出勤記録(attended)が
+    // 1件も無い営業日を数える。勤怠入力は「出勤した人を追加」する方式で発行済みシフトを
+    // 変換しないため、発行済み件数そのものは未入力の指標にならない(常に残る)。
+    // 「発行済みなのに誰の出勤も記録されていない日」だけを本当の入力漏れとして警告する。
+    const dateStatusInRange = new Map<string, { hasPublished: boolean; hasAttended: boolean }>();
+    for (const s of shifts) {
+      if (s.date < period.startDate || s.date > period.endDate) continue;
+      if (s.status !== 'published' && s.status !== 'attended') continue;
+      const e = dateStatusInRange.get(s.date) ?? { hasPublished: false, hasAttended: false };
+      if (s.status === 'published') e.hasPublished = true;
+      if (s.status === 'attended') e.hasAttended = true;
+      dateStatusInRange.set(s.date, e);
+    }
+    const pendingAttendanceDays = [...dateStatusInRange.entries()]
+      .filter(([, v]) => v.hasPublished && !v.hasAttended)
+      .map(([date]) => date)
+      .sort();
 
     // 半日勤務を考慮した延べ人日（0.5換算・学生のみ）
     const effectivePersonDays = calcEffectiveDays(studentAttendedShifts);
@@ -255,7 +270,7 @@ export default function AdminPayAllocation() {
       budget,
       totalPersonDays,
       effectivePersonDays,
-      pendingShifts,
+      pendingAttendanceDays,
       ...calc,
       fullSlots: totalFullSlots,
       vSlots: totalVSlots,
@@ -480,13 +495,17 @@ export default function AdminPayAllocation() {
         </div>
       )}
 
-      {/* Pending attendance warning */}
-      {monthData.pendingShifts > 0 && (
+      {/* 勤怠入力漏れの警告: 発行済みなのに出勤記録が1件も無い営業日 */}
+      {monthData.pendingAttendanceDays.length > 0 && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center gap-3">
           <span className="text-amber-600 text-lg">⚠</span>
           <div>
-            <p className="text-sm font-medium text-amber-800">勤怠未入力のシフトが {monthData.pendingShifts}件 あります</p>
-            <p className="text-xs text-amber-600">勤怠入力ページで出勤/欠席を記録してから配分を確定してください。未入力分は計算に含まれません。</p>
+            <p className="text-sm font-medium text-amber-800">
+              シフトは発行済みなのに出勤記録が1件も無い営業日が {monthData.pendingAttendanceDays.length}日 あります
+              （{monthData.pendingAttendanceDays.slice(0, 5).map((d) => format(parseISO(d), 'M/d', { locale: ja })).join('、')}
+              {monthData.pendingAttendanceDays.length > 5 ? ' ...' : ''}）
+            </p>
+            <p className="text-xs text-amber-600">その日に本当にシフトが無かったなら問題ありません。入力漏れの場合は勤怠入力ページで出勤者を記録してから配分を確定してください。</p>
           </div>
         </div>
       )}
