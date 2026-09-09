@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clubName: '逗子ライフセービングクラブ',
   monthlyBudgets: {},
   allocatedMonths: [],
+  mergedWithPrev: [],
   availabilityLocked: false,
 };
 
@@ -46,6 +47,7 @@ export const useSettingsStore = isFirebaseConfigured
             ...settings,
             monthlyBudgets: settings.monthlyBudgets ?? {},
             allocatedMonths: settings.allocatedMonths ?? [],
+            mergedWithPrev: settings.mergedWithPrev ?? [],
             availabilityLocked: settings.availabilityLocked ?? false,
           };
           set({ settings: merged, _ready: true });

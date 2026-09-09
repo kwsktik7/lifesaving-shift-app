@@ -84,6 +84,12 @@ export interface AppSettings {
   monthlyBudgets: Record<string, number>;
   /** 配分確定済みの月 (キー "YYYY-MM" の配列)。fullSlots=0 でも確定状態を保持するための明示フラグ */
   allocatedMonths: string[];
+  /**
+   * 前の月と合算して1つの期間として計算・出力する月 (キー "YYYY-MM" の配列)。
+   * 例: ["2026-09"] なら 8月と9月を「8〜9月」として1つの予算・配分・勤怠表にまとめる。
+   * 日数の少ない月(9月など)を隣の月とまとめて給与計算・出力するための設定。
+   */
+  mergedWithPrev?: string[];
   /** シフト提出の締め切りフラグ。trueなら学生は変更不可 */
   availabilityLocked: boolean;
 }

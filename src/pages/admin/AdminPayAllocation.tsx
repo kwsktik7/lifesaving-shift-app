@@ -5,75 +5,14 @@ import { useShiftStore } from '@/store/shiftStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Check, Undo2, Download } from 'lucide-react';
 import { exportAttendanceReport } from '@/utils/export';
-import { getMonthRanges } from '@/utils/monthRanges';
+import { getMonthRanges, buildPeriods, monthKeyOf } from '@/utils/monthRanges';
+import { tsurukame, distributeFullDays } from '@/utils/allocation';
 import { shiftPay, assignPayTypes, adultShiftPay } from '@/utils/pay';
-
-/** 鶴亀算: 予算と延べ人日から1枠・V枠を計算 */
-function tsurukame(budget: number, totalPersonDays: number, fullPay: number, vPay: number, minimizeSurplus = false) {
-  // 配分対象の人日がない場合、予算全額が余剰(翌月繰越)となる。
-  // ここで surplus:0 を返すと、強制V分以外の予算が消えてしまうので必ず budget を返す。
-  if (totalPersonDays === 0) return { fullSlots: 0, vSlots: 0, surplus: budget };
-  const diff = fullPay - vPay;
-  let fullSlots = Math.max(0, Math.min(totalPersonDays, Math.floor((budget - totalPersonDays * vPay) / diff)));
-  // 最終月など余剰を最小化したい場合、1枠を1つ増やして余剰が0以上ならそちらを採用
-  if (minimizeSurplus && fullSlots < totalPersonDays) {
-    const candidateFull = fullSlots + 1;
-    const candidatePay = candidateFull * fullPay + (totalPersonDays - candidateFull) * vPay;
-    if (candidatePay <= budget) {
-      fullSlots = candidateFull;
-    }
-  }
-  const vSlots = totalPersonDays - fullSlots;
-  const actualPay = fullSlots * fullPay + vSlots * vPay;
-  return { fullSlots, vSlots, surplus: budget - actualPay };
-}
 
 /** 1年生は最初の3回の勤務をVで固定 */
 const ROOKIE_V_SHIFT_QUOTA = 3;
 function isRookie(grade: string): boolean {
   return /1年/.test(grade);
-}
-
-/** 最大剰余法で1日数を各学生に配分 */
-function distributeFullDays(
-  studentDays: { studentId: string; days: number }[],
-  totalFullSlots: number
-): Map<string, number> {
-  // 半日(0.5刻み)を扱うため、内部で全てを2倍して整数化してHamilton最大剰余法で配分、
-  // 最後に ÷2 して戻す。加えて各学生の出勤半日数でcapし、fullDaysがその人の
-  // totalDaysを超えないように保証(半日しか来てない人にフル1枠振る等のバグを防ぐ)。
-  const scale = 2;
-  const scaled = studentDays.map((s) => ({
-    studentId: s.studentId,
-    cap: Math.round(s.days * scale),
-  }));
-  const totalCap = scaled.reduce((acc, s) => acc + s.cap, 0);
-  if (totalCap === 0) return new Map();
-
-  const targetSlots = Math.min(Math.round(totalFullSlots * scale), totalCap);
-  const ratio = targetSlots / totalCap;
-
-  const result = scaled.map((s) => {
-    const exact = s.cap * ratio;
-    const base = Math.min(s.cap, Math.floor(exact));
-    return { studentId: s.studentId, base, remainder: exact - base, cap: s.cap };
-  });
-
-  // 余り枠をremainder大きい順に+1していく(cap超過は絶対避ける)
-  let remaining = targetSlots - result.reduce((acc, r) => acc + r.base, 0);
-  const sorted = [...result].sort((a, b) => b.remainder - a.remainder);
-  for (let i = 0; i < sorted.length && remaining > 0; i++) {
-    if (sorted[i].base < sorted[i].cap) {
-      sorted[i].base++;
-      remaining--;
-    }
-  }
-
-  const map = new Map<string, number>();
-  for (const r of result) {
-    map.set(r.studentId, r.base / scale);
-  }
-  return map;
 }
 
 export default function AdminPayAllocation() {
@@ -86,9 +25,18 @@ export default function AdminPayAllocation() {
     () => getMonthRanges(settings.seasonStart, settings.seasonEnd),
     [settings.seasonStart, settings.seasonEnd]
   );
-  const [selectedMonth, setSelectedMonth] = useState(0);
+  // 「前の月と合算」設定を反映した期間(単月 or 合算)の一覧。給与計算・出力の単位。
+  const mergedWithPrevKey = (settings.mergedWithPrev ?? []).join(',');
+  const periods = useMemo(
+    () => buildPeriods(months, new Set(settings.mergedWithPrev ?? [])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [months, mergedWithPrevKey]
+  );
+  const [selectedPeriodIdx, setSelectedPeriodIdx] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
-  const month = months[selectedMonth];
+  // 合算設定変更で期間数が減ったときに範囲外を選ばないようクランプ
+  const selectedPeriod = periods.length > 0 ? Math.min(selectedPeriodIdx, periods.length - 1) : 0;
+  const period = periods[selectedPeriod];
 
   // 学生(鶴亀算の配分対象) と 社会人(区分固定・予算から先取り控除) を分離する
   const activeStudents = students.filter((s) => s.isActive && !s.isAdult);
@@ -96,12 +44,13 @@ export default function AdminPayAllocation() {
   const studentIdSet = new Set(activeStudents.map((s) => s.id));
 
   function handleExport() {
-    if (!month || !monthData) return;
+    if (!period || !monthData) return;
     // Excel(勤怠表)には社会人も含める。全 active(学生+社会人)を渡す。
-    // 配分未確定の月は 1/V を出さず出勤印「○」だけを出力する(monthData.hasAllocation)。
+    // 配分未確定の期間は 1/V を出さず出勤印「○」だけを出力する(monthData.hasAllocation)。
+    // 合算期間(8〜9月など)は開始日〜終了日をまたいだ1つの勤怠表になる。
     const allActive = students.filter((s) => s.isActive);
     exportAttendanceReport(
-      allActive, shifts, settings, days, month.label, month.startDate, month.endDate,
+      allActive, shifts, settings, days, period.label, period.startDate, period.endDate,
       monthData.hasAllocation,
     );
   }
@@ -161,64 +110,64 @@ export default function AdminPayAllocation() {
     return { shiftIds: forced.map((s) => s.id), effectiveDays };
   }
 
-  // 全月の余剰を計算（繰越用）
+  // 全期間の余剰を計算（繰越用）。繰越は期間→期間で流れる(合算月は1期間として1回だけ計算)。
   const allMonthSurplus = useMemo(() => {
-    const surplusMap = new Map<number, number>(); // monthIndex -> surplus
-    for (let i = 0; i < months.length; i++) {
-      const m = months[i];
-      const monthKey = `${m.year}-${String(m.month + 1).padStart(2, '0')}`;
-      const baseBudget = settings.monthlyBudgets?.[monthKey] ?? 0;
+    const surplusMap = new Map<number, number>(); // periodIndex -> surplus
+    for (let i = 0; i < periods.length; i++) {
+      const p = periods[i];
+      // 期間予算 = 含まれる各月の予算合計
+      const baseBudget = p.monthKeys.reduce((acc, k) => acc + (settings.monthlyBudgets?.[k] ?? 0), 0);
       const carryover = i > 0 ? (surplusMap.get(i - 1) ?? 0) : 0;
       const totalBudget = baseBudget + carryover;
 
       // 鶴亀算の人日は学生のみ(社会人は配分対象外)
       const attended = shifts.filter(
-        (s) => s.date >= m.startDate && s.date <= m.endDate && s.status === 'attended' && studentIdSet.has(s.studentId)
+        (s) => s.date >= p.startDate && s.date <= p.endDate && s.status === 'attended' && studentIdSet.has(s.studentId)
       );
       const personDays = calcEffectiveDays(attended);
 
       // 社会人給与は予算から先に控除
-      const adultPayTotal = calcAdultPayForMonth(m.startDate, m.endDate).total;
+      const adultPayTotal = calcAdultPayForMonth(p.startDate, p.endDate).total;
 
       // 1年生の強制V分を控除
       let forcedVEffectiveDays = 0;
       for (const st of activeStudents) {
         if (!isRookie(st.grade)) continue;
-        forcedVEffectiveDays += calcRookieForcedV(st.id, m.startDate, m.endDate).effectiveDays;
+        forcedVEffectiveDays += calcRookieForcedV(st.id, p.startDate, p.endDate).effectiveDays;
       }
       const eligibleDays = personDays - forcedVEffectiveDays;
       const eligibleBudget = totalBudget - adultPayTotal - forcedVEffectiveDays * settings.vPayAmount;
 
-      const isLastMonth = i === months.length - 1;
-      const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
+      const isLastPeriod = i === periods.length - 1;
+      const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastPeriod);
       surplusMap.set(i, calc.surplus);
     }
     return surplusMap;
-  }, [months, days, shifts, settings, activeStudents]);
+  }, [periods, days, shifts, settings, activeStudents]);
 
   const monthData = useMemo(() => {
-    if (!month) return null;
+    if (!period) return null;
 
-    const monthDays = days.filter((d) => d.isOpen && d.date >= month.startDate && d.date <= month.endDate);
-    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
-    const baseBudget = settings.monthlyBudgets?.[monthKey] ?? 0;
-    const carryover = selectedMonth > 0 ? (allMonthSurplus.get(selectedMonth - 1) ?? 0) : 0;
+    const monthDays = days.filter((d) => d.isOpen && d.date >= period.startDate && d.date <= period.endDate);
+    // 期間予算 = 含まれる各月の予算合計(合算期間は8月+9月など)
+    const baseBudget = period.monthKeys.reduce((acc, k) => acc + (settings.monthlyBudgets?.[k] ?? 0), 0);
+    const carryover = selectedPeriod > 0 ? (allMonthSurplus.get(selectedPeriod - 1) ?? 0) : 0;
     const budget = baseBudget + carryover;
 
     // 出勤確定シフト。全員(Excel/勤怠表示用)と、鶴亀算に使う学生のみ を分ける。
     const attendedShifts = shifts.filter(
-      (s) => s.date >= month.startDate && s.date <= month.endDate && s.status === 'attended'
+      (s) => s.date >= period.startDate && s.date <= period.endDate && s.status === 'attended'
     );
     const studentAttendedShifts = attendedShifts.filter((s) => studentIdSet.has(s.studentId));
     const totalPersonDays = calcEffectiveDays(studentAttendedShifts);
 
     // 社会人給与(区分固定)。予算から先取り控除する。
-    const adult = calcAdultPayForMonth(month.startDate, month.endDate);
+    const adult = calcAdultPayForMonth(period.startDate, period.endDate);
     const adultPayTotal = adult.total;
 
     // 勤怠未入力シフト
     const pendingShifts = shifts.filter(
-      (s) => s.date >= month.startDate && s.date <= month.endDate && s.status === 'published'
+      (s) => s.date >= period.startDate && s.date <= period.endDate && s.status === 'published'
     ).length;
 
     // 半日勤務を考慮した延べ人日（0.5換算・学生のみ）
@@ -237,7 +186,7 @@ export default function AdminPayAllocation() {
     const forcedVShiftIds = new Set<string>();
     for (const st of activeStudents) {
       if (!isRookie(st.grade)) continue;
-      const forced = calcRookieForcedV(st.id, month.startDate, month.endDate);
+      const forced = calcRookieForcedV(st.id, period.startDate, period.endDate);
       if (forced.effectiveDays > 0) {
         rookieForcedVByStudent.set(st.id, forced);
         totalRookieForcedVDays += forced.effectiveDays;
@@ -248,8 +197,8 @@ export default function AdminPayAllocation() {
     // 配分対象の延べ人日と予算（社会人給与と強制Vを予算から先に控除）
     const eligibleDays = effectivePersonDays - totalRookieForcedVDays;
     const eligibleBudget = budget - adultPayTotal - totalRookieForcedVDays * settings.vPayAmount;
-    const isLastMonth = selectedMonth === months.length - 1;
-    const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastMonth);
+    const isLastPeriod = selectedPeriod === periods.length - 1;
+    const calc = tsurukame(eligibleBudget, eligibleDays, settings.fullPayAmount, settings.vPayAmount, isLastPeriod);
 
     // 各学生の配分対象日数（総日数 - 強制V日数）
     const studentDays = activeStudents
@@ -295,7 +244,9 @@ export default function AdminPayAllocation() {
     const totalVSlots = calc.vSlots + totalRookieForcedVDays;
 
     // 配分確定状態は明示フラグで管理（fullSlots=0でも確定として扱える）
-    const hasAllocation = (settings.allocatedMonths ?? []).includes(monthKey);
+    // 合算期間は含まれる全ての月が確定済みのときだけ「確定」とみなす。
+    const allocated = settings.allocatedMonths ?? [];
+    const hasAllocation = period.monthKeys.every((k) => allocated.includes(k));
 
     return {
       monthDays,
@@ -318,11 +269,37 @@ export default function AdminPayAllocation() {
       adultAllocations: adult.perAdult, // 社会人の個人別(区分固定)給与
       adultPayTotal,                    // 社会人給与合計(予算から控除済み)
     };
-  }, [month, days, shifts, students, settings, activeStudents, selectedMonth, allMonthSurplus]);
+  }, [period, days, shifts, students, settings, activeStudents, selectedPeriod, periods.length, allMonthSurplus]);
+
+  /** 月の「前の月と合算」設定をトグルする */
+  function toggleMerge(monthKey: string, merged: boolean) {
+    const current = settings.mergedWithPrev ?? [];
+    const next = merged
+      ? (current.includes(monthKey) ? current : [...current, monthKey])
+      : current.filter((k) => k !== monthKey);
+
+    // グルーピングが変わる月は確定を解除する。
+    // 保存済みシフトの payType は「確定時のグルーピングの予算」で計算されている。
+    // 合算/分割でその基準予算が変わると、画面(常に現在の期間予算で再計算)と
+    // Excel(保存済み payType を読む)が食い違い、月予算を超えることがある。
+    // → 変更前後で monthKey が属する期間の全月キーを未確定に戻し、再配分を促す。
+    const affected = new Set<string>();
+    for (const set of [new Set(current), new Set(next)]) {
+      const p = buildPeriods(months, set).find((pp) => pp.monthKeys.includes(monthKey));
+      if (p) p.monthKeys.forEach((k) => affected.add(k));
+    }
+    const allocated = settings.allocatedMonths ?? [];
+    const nextAllocated = allocated.filter((k) => !affected.has(k));
+
+    const patch: { mergedWithPrev: string[]; allocatedMonths?: string[] } = { mergedWithPrev: next };
+    if (nextAllocated.length !== allocated.length) patch.allocatedMonths = nextAllocated;
+    updateSettings(patch);
+    // 期間数が変わるので選択を先頭に戻して範囲外参照を防ぐ
+    setSelectedPeriodIdx(0);
+  }
 
   async function handleAllocate() {
-    if (!monthData || !month) return;
-    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
+    if (!monthData || !period) return;
     const updates: { id: string; payType: 'V' | '1' }[] = [];
     for (const alloc of monthData.studentAllocations) {
       const studentShifts = monthData.attendedShifts
@@ -338,9 +315,11 @@ export default function AdminPayAllocation() {
     }
     try {
       await setShiftPayTypesBulk(updates);
+      // 合算期間は含まれる全ての月キーを確定済みにする
       const current = settings.allocatedMonths ?? [];
-      if (!current.includes(monthKey)) {
-        await updateSettings({ allocatedMonths: [...current, monthKey] });
+      const toAdd = period.monthKeys.filter((k) => !current.includes(k));
+      if (toAdd.length > 0) {
+        await updateSettings({ allocatedMonths: [...current, ...toAdd] });
       }
       setErrorMsg('');
     } catch (e) {
@@ -351,17 +330,18 @@ export default function AdminPayAllocation() {
   }
 
   async function handleReset() {
-    if (!monthData || !month) return;
-    const monthKey = `${month.year}-${String(month.month + 1).padStart(2, '0')}`;
+    if (!monthData || !period) return;
     // リセットは学生シフトのみ(社会人は payType を使わず区分固定で計算するため触らない)
     const updates = monthData.attendedShifts
       .filter((s) => studentIdSet.has(s.studentId))
       .map((s) => ({ id: s.id, payType: 'V' as const }));
     try {
       await setShiftPayTypesBulk(updates);
+      // 合算期間は含まれる全ての月キーの確定を解除する
       const current = settings.allocatedMonths ?? [];
-      if (current.includes(monthKey)) {
-        await updateSettings({ allocatedMonths: current.filter((k) => k !== monthKey) });
+      const keySet = new Set(period.monthKeys);
+      if (period.monthKeys.some((k) => current.includes(k))) {
+        await updateSettings({ allocatedMonths: current.filter((k) => !keySet.has(k)) });
       }
       setErrorMsg('');
     } catch (e) {
@@ -371,43 +351,71 @@ export default function AdminPayAllocation() {
     }
   }
 
-  if (!month || !monthData) return <div className="p-6 text-gray-400">シーズンデータがありません</div>;
+  if (!period || !monthData) return <div className="p-6 text-gray-400">シーズンデータがありません</div>;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">給与配分</h1>
-          <p className="text-xs text-gray-400">設定ページの月別予算と勤怠実績をもとに、月ごとの1/Vを鶴亀算で計算し均等配分します。</p>
+          <p className="text-xs text-gray-400">設定ページの月別予算と勤怠実績をもとに、期間ごとの1/Vを鶴亀算で計算し均等配分します。</p>
         </div>
         <button
           onClick={handleExport}
           className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
         >
           <Download size={16} />
-          {month?.label}の勤怠表をXLSX出力
+          {period?.label}の勤怠表をXLSX出力
         </button>
       </div>
 
-      {/* Month tabs */}
-      <div className="flex gap-2">
-        {months.map((m, i) => (
+      {/* 期間タブ(単月 or 合算) */}
+      <div className="flex flex-wrap gap-2">
+        {periods.map((p, i) => (
           <button
-            key={m.label}
-            onClick={() => setSelectedMonth(i)}
+            key={p.monthKeys.join(',')}
+            onClick={() => setSelectedPeriodIdx(i)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              i === selectedMonth ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              i === selectedPeriod ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
-            {m.label}
+            {p.label}
           </button>
         ))}
       </div>
 
-      {/* Month summary */}
+      {/* 月の合算設定(日数の少ない月を隣とまとめて計算・出力する) */}
+      {months.length >= 2 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-sm font-semibold text-gray-700 mb-1">月の合算</p>
+          <p className="text-xs text-gray-400 mb-3">
+            日数の少ない月を前の月とまとめて、1つの予算・給与計算・勤怠表として扱います（例: 9月を8月と合算）。
+          </p>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {months.slice(1).map((m) => {
+              const key = monthKeyOf(m);
+              const prev = months[months.indexOf(m) - 1];
+              const merged = (settings.mergedWithPrev ?? []).includes(key);
+              return (
+                <label key={key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={merged}
+                    onChange={(e) => toggleMerge(key, e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <span>{m.month + 1}月を{prev.month + 1}月と合算</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Period summary */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500">月予算</p>
+          <p className="text-xs text-gray-500">予算</p>
           <p className="text-lg font-bold text-gray-800">¥{monthData.budget.toLocaleString()}</p>
           <p className="text-xs text-gray-400">{monthData.monthDays.length}日間</p>
           {monthData.carryover > 0 && (
@@ -449,8 +457,8 @@ export default function AdminPayAllocation() {
           }`}>
             {monthData.hasAllocation ? `¥${monthData.surplus.toLocaleString()}` : '未確定'}
           </p>
-          {monthData.hasAllocation && monthData.surplus > 0 && selectedMonth < months.length - 1 && (
-            <p className="text-xs text-blue-600 mt-1">→ 翌月に繰越</p>
+          {monthData.hasAllocation && monthData.surplus > 0 && selectedPeriod < periods.length - 1 && (
+            <p className="text-xs text-blue-600 mt-1">→ 次の期間に繰越</p>
           )}
         </div>
       </div>
@@ -466,7 +474,7 @@ export default function AdminPayAllocation() {
         <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-center gap-3">
           <span className="text-red-600 text-lg">⚠</span>
           <div>
-            <p className="text-sm font-medium text-red-800">{month.label}の予算が未設定です</p>
+            <p className="text-sm font-medium text-red-800">{period.label}の予算が未設定です</p>
             <p className="text-xs text-red-600">設定ページの「月別予算」で金額を入力してください。</p>
           </div>
         </div>
